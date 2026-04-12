@@ -1,0 +1,387 @@
+import {
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { PrismaService } from '../prisma/prisma.service';
+import {
+  EarningStatus,
+  JobStatus,
+  Prisma,
+  Role,
+} from '../../generated/prisma/client';
+import { ListVendorsDto } from './dto/list-vendors.dto';
+import { UpdateVendorProfileDto } from './dto/update-vendor-profile.dto';
+import { CreateVendorReviewDto } from './dto/create-review.dto';
+
+@Injectable()
+export class VendorsService {
+  constructor(private readonly prisma: PrismaService) {}
+
+  // ─── Public directory ────────────────────────────────────────────────────
+
+  async list(dto: ListVendorsDto) {
+    const page = dto.page ?? 1;
+    const limit = dto.limit ?? 24;
+    const skip = (page - 1) * limit;
+
+    const where: Prisma.UserWhereInput = {
+      role: Role.VENDOR,
+      isActive: true,
+      deletedAt: null,
+      vendorProfile: {
+        is: {
+          availableForHire: true,
+        },
+      },
+    };
+
+    if (dto.search) {
+      where.OR = [
+        { name: { contains: dto.search, mode: 'insensitive' } },
+        { location: { contains: dto.search, mode: 'insensitive' } },
+        {
+          vendorProfile: {
+            is: { serviceCategory: { contains: dto.search, mode: 'insensitive' } },
+          },
+        },
+      ];
+    }
+
+    if (dto.location) {
+      where.location = { contains: dto.location, mode: 'insensitive' };
+    }
+
+    const vendorProfileFilters: Prisma.VendorProfileWhereInput = {
+      availableForHire: true,
+    };
+    if (dto.category) {
+      vendorProfileFilters.serviceCategory = {
+        equals: dto.category,
+        mode: 'insensitive',
+      };
+    }
+    if (dto.minRating != null) {
+      vendorProfileFilters.rating = { gte: Number(dto.minRating) };
+    }
+    where.vendorProfile = { is: vendorProfileFilters };
+
+    const orderBy: Prisma.UserOrderByWithRelationInput[] = [];
+    switch (dto.sort) {
+      case 'most_jobs':
+        orderBy.push({ vendorProfile: { jobsCount: 'desc' } });
+        break;
+      case 'price_asc':
+        orderBy.push({ vendorProfile: { priceNum: 'asc' } });
+        break;
+      case 'newest':
+        orderBy.push({ createdAt: 'desc' });
+        break;
+      case 'top_rated':
+      default:
+        orderBy.push({ vendorProfile: { rating: 'desc' } });
+    }
+
+    const [items, total] = await Promise.all([
+      this.prisma.user.findMany({
+        where,
+        include: { vendorProfile: true },
+        orderBy,
+        skip,
+        take: limit,
+      }),
+      this.prisma.user.count({ where }),
+    ]);
+
+    return {
+      items: items.map((u) => this.serializePublic(u)),
+      total,
+      page,
+      limit,
+      pages: Math.ceil(total / limit),
+    };
+  }
+
+  // ─── Public single profile ───────────────────────────────────────────────
+
+  async getPublicProfile(vendorId: string) {
+    const user = await this.prisma.user.findFirst({
+      where: {
+        id: vendorId,
+        role: Role.VENDOR,
+        isActive: true,
+        deletedAt: null,
+      },
+      include: { vendorProfile: true },
+    });
+    if (!user || !user.vendorProfile) throw new NotFoundException('Vendor not found');
+
+    const reviews = await this.prisma.vendorReview.findMany({
+      where: { vendorUserId: user.id },
+      orderBy: { createdAt: 'desc' },
+      take: 20,
+    });
+
+    return {
+      ...this.serializePublic(user),
+      reviews,
+    };
+  }
+
+  // ─── Authenticated vendor: own profile + dashboard stats ─────────────────
+
+  async getMe(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: { vendorProfile: true, settings: true },
+    });
+    if (!user || user.role !== Role.VENDOR || !user.vendorProfile) {
+      throw new ForbiddenException('Vendor profile not found');
+    }
+    return this.serializePrivate(user);
+  }
+
+  async updateMe(userId: string, dto: UpdateVendorProfileDto) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: { vendorProfile: true },
+    });
+    if (!user || user.role !== Role.VENDOR || !user.vendorProfile) {
+      throw new ForbiddenException('Vendor profile not found');
+    }
+
+    const updated = await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        ...(dto.name !== undefined && { name: dto.name }),
+        ...(dto.phone !== undefined && { phone: dto.phone }),
+        ...(dto.location !== undefined && { location: dto.location }),
+        ...(dto.bio !== undefined && { bio: dto.bio }),
+        ...(dto.avatarUrl !== undefined && { avatarUrl: dto.avatarUrl }),
+        vendorProfile: {
+          update: {
+            ...(dto.serviceCategory !== undefined && { serviceCategory: dto.serviceCategory }),
+            ...(dto.yearsExperience !== undefined && { yearsExperience: dto.yearsExperience }),
+            ...(dto.serviceArea !== undefined && { serviceArea: dto.serviceArea }),
+            ...(dto.priceLabel !== undefined && { priceLabel: dto.priceLabel }),
+            ...(dto.priceNum !== undefined && { priceNum: dto.priceNum }),
+            ...(dto.bannerImage !== undefined && { bannerImage: dto.bannerImage }),
+            ...(dto.portfolioImages !== undefined && { portfolioImages: dto.portfolioImages }),
+            ...(dto.availableForHire !== undefined && { availableForHire: dto.availableForHire }),
+          },
+        },
+      },
+      include: { vendorProfile: true, settings: true },
+    });
+
+    return this.serializePrivate(updated);
+  }
+
+  async getStats(userId: string) {
+    const profile = await this.prisma.vendorProfile.findUnique({
+      where: { userId },
+    });
+    if (!profile) throw new ForbiddenException('Vendor profile not found');
+
+    const startOfMonth = new Date();
+    startOfMonth.setDate(1);
+    startOfMonth.setHours(0, 0, 0, 0);
+
+    const [
+      pendingJobs,
+      activeJobs,
+      completedJobs,
+      totalJobs,
+      earningsPaidAgg,
+      earningsPendingAgg,
+      earningsThisMonthAgg,
+      reviewsCount,
+      reviewsAvg,
+      fiveStarCount,
+    ] = await Promise.all([
+      this.prisma.vendorJob.count({
+        where: { vendorUserId: userId, status: JobStatus.PENDING },
+      }),
+      this.prisma.vendorJob.count({
+        where: {
+          vendorUserId: userId,
+          status: { in: [JobStatus.ACCEPTED, JobStatus.IN_PROGRESS] },
+        },
+      }),
+      this.prisma.vendorJob.count({
+        where: {
+          vendorUserId: userId,
+          status: { in: [JobStatus.COMPLETED, JobStatus.PAID] },
+        },
+      }),
+      this.prisma.vendorJob.count({ where: { vendorUserId: userId } }),
+      this.prisma.vendorEarning.aggregate({
+        where: { vendorUserId: userId, status: EarningStatus.PAID },
+        _sum: { amount: true },
+      }),
+      this.prisma.vendorEarning.aggregate({
+        where: {
+          vendorUserId: userId,
+          status: { in: [EarningStatus.PENDING, EarningStatus.PROCESSING] },
+        },
+        _sum: { amount: true },
+      }),
+      this.prisma.vendorEarning.aggregate({
+        where: {
+          vendorUserId: userId,
+          status: EarningStatus.PAID,
+          paidAt: { gte: startOfMonth },
+        },
+        _sum: { amount: true },
+      }),
+      this.prisma.vendorReview.count({ where: { vendorUserId: userId } }),
+      this.prisma.vendorReview.aggregate({
+        where: { vendorUserId: userId },
+        _avg: { rating: true },
+      }),
+      this.prisma.vendorReview.count({
+        where: { vendorUserId: userId, rating: 5 },
+      }),
+    ]);
+
+    const paid = earningsPaidAgg._sum.amount ?? 0;
+    const pending = earningsPendingAgg._sum.amount ?? 0;
+    const thisMonth = earningsThisMonthAgg._sum.amount ?? 0;
+
+    return {
+      profile: {
+        rating: profile.rating,
+        jobsCount: profile.jobsCount,
+        verified: profile.verified,
+        availableForHire: profile.availableForHire,
+      },
+      jobs: {
+        pending: pendingJobs,
+        active: activeJobs,
+        completed: completedJobs,
+        total: totalJobs,
+      },
+      earnings: {
+        total: paid + pending,
+        paid,
+        pending,
+        thisMonth,
+      },
+      reviews: {
+        total: reviewsCount,
+        averageRating: Number((reviewsAvg._avg.rating ?? 0).toFixed(2)),
+        fiveStarPct:
+          reviewsCount === 0 ? 0 : Math.round((fiveStarCount / reviewsCount) * 100),
+      },
+    };
+  }
+
+  // ─── Reviews ──────────────────────────────────────────────────────────────
+
+  async listReviews(vendorId: string) {
+    const vendor = await this.prisma.user.findFirst({
+      where: { id: vendorId, role: Role.VENDOR, deletedAt: null },
+      select: { id: true },
+    });
+    if (!vendor) throw new NotFoundException('Vendor not found');
+    return this.prisma.vendorReview.findMany({
+      where: { vendorUserId: vendorId },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  async createReview(
+    vendorId: string,
+    dto: CreateVendorReviewDto,
+    reviewerUserId?: string,
+  ) {
+    const vendor = await this.prisma.user.findFirst({
+      where: { id: vendorId, role: Role.VENDOR, deletedAt: null },
+      include: { vendorProfile: true },
+    });
+    if (!vendor || !vendor.vendorProfile) throw new NotFoundException('Vendor not found');
+
+    let clientName = dto.reviewerName?.trim();
+    let clientAvatar = dto.reviewerAvatar;
+    if (reviewerUserId) {
+      const reviewer = await this.prisma.user.findUnique({
+        where: { id: reviewerUserId },
+        select: { name: true, avatarUrl: true },
+      });
+      clientName = reviewer?.name || clientName || 'Anonymous';
+      clientAvatar = clientAvatar || reviewer?.avatarUrl || undefined;
+    }
+    if (!clientName) clientName = 'Anonymous';
+
+    // Optionally link to a specific completed job
+    let jobId: string | undefined;
+    let jobTitle = dto.jobTitle || '';
+    if (dto.jobId) {
+      const job = await this.prisma.vendorJob.findUnique({
+        where: { id: dto.jobId },
+      });
+      if (job && job.vendorUserId === vendorId) {
+        jobId = job.id;
+        jobTitle = jobTitle || job.title;
+      }
+    }
+
+    const review = await this.prisma.vendorReview.create({
+      data: {
+        vendorUserId: vendorId,
+        jobId,
+        clientName,
+        clientAvatar,
+        rating: dto.rating,
+        comment: dto.comment,
+        jobTitle,
+      },
+    });
+
+    // Recompute the vendor's average rating
+    const agg = await this.prisma.vendorReview.aggregate({
+      where: { vendorUserId: vendorId },
+      _avg: { rating: true },
+    });
+    await this.prisma.vendorProfile.update({
+      where: { userId: vendorId },
+      data: { rating: Number((agg._avg.rating ?? 0).toFixed(2)) },
+    });
+
+    return review;
+  }
+
+  // ─── Serializers ──────────────────────────────────────────────────────────
+
+  private serializePublic(user: any) {
+    const p = user.vendorProfile;
+    return {
+      id: user.id,
+      name: user.name,
+      avatarUrl: user.avatarUrl,
+      location: user.location,
+      phone: user.phone,
+      email: user.email,
+      bio: user.bio,
+      category: p?.serviceCategory ?? null,
+      serviceArea: p?.serviceArea ?? null,
+      yearsExperience: p?.yearsExperience ?? null,
+      priceLabel: p?.priceLabel ?? null,
+      priceNum: p?.priceNum ?? null,
+      bannerImage: p?.bannerImage ?? null,
+      portfolioImages: p?.portfolioImages ?? [],
+      availableForHire: p?.availableForHire ?? true,
+      rating: p?.rating ?? 0,
+      jobsCount: p?.jobsCount ?? 0,
+      verified: p?.verified ?? false,
+      createdAt: user.createdAt,
+    };
+  }
+
+  private serializePrivate(user: any) {
+    return {
+      ...this.serializePublic(user),
+      settings: user.settings,
+    };
+  }
+}

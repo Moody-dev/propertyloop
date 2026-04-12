@@ -12,6 +12,10 @@ datasource db {
   provider = "postgresql"
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Marketing waitlist (pre-launch). Independent of the auth system below.
+// ─────────────────────────────────────────────────────────────────────────────
+
 enum UserType {
   REAL_ESTATE_AGENT
   BUILDER
@@ -20,13 +24,878 @@ enum UserType {
 }
 
 model WaitlistEntry {
-  id          String    @id @default(uuid())
-  first_name  String
-  last_name   String
+  id           String   @id @default(uuid())
+  first_name   String
+  last_name    String
   company_name String?
-  location    String?
-  phone       String
-  email       String    @unique
-  type        UserType  @default(REAL_ESTATE_AGENT)
-  created_at  DateTime  @default(now())
+  location     String?
+  phone        String
+  email        String   @unique
+  type         UserType @default(REAL_ESTATE_AGENT)
+  created_at   DateTime @default(now())
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Enums for the auth & core domain
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum Role {
+  BUYER
+  AGENT
+  VENDOR
+}
+
+enum ListingType {
+  SALE
+  RENT
+  SHORTLET
+}
+
+enum DocumentType {
+  C_OF_O
+  SURVEY_PLAN
+  BUILDING_PERMIT
+  RECEIPT
+}
+
+enum BookmarkType {
+  PROPERTY
+  SERVICE
+  PRODUCT
+}
+
+enum JobStatus {
+  PENDING
+  ACCEPTED
+  IN_PROGRESS
+  COMPLETED
+  PAID
+}
+
+enum EarningStatus {
+  PAID
+  PENDING
+  PROCESSING
+}
+
+enum OrderPaymentMethod {
+  CARD
+  TRANSFER
+  WALLET
+}
+
+enum ConversationParticipantRole {
+  AGENT
+  VENDOR
+  HOMEOWNER
+  TENANT
+  BUYER
+}
+
+enum LeadStatus {
+  NEW
+  CONTACTED
+  VIEWING_SCHEDULED
+  NEGOTIATING
+  CONVERTED
+  LOST
+}
+
+enum LeadSource {
+  LISTING_PAGE
+  AGENT_PROFILE
+  PHONE
+  EMAIL
+  REFERRAL
+  OTHER
+}
+
+enum ViewingStatus {
+  PENDING
+  CONFIRMED
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+}
+
+enum ListingStatus {
+  PENDING_REVIEW
+  ACTIVE
+  PAUSED
+  SOLD
+  RENTED
+  ARCHIVED
+}
+
+enum ShortletBookingStatus {
+  PENDING
+  CONFIRMED
+  CHECKED_IN
+  COMPLETED
+  CANCELLED
+}
+
+enum RentalApplicationStatus {
+  PENDING
+  DEPOSIT_PAID
+  AGREEMENT_SIGNED
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
+enum EscrowStatus {
+  NONE
+  LOCKED
+  RELEASED
+  DISPUTED
+  REFUNDED
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Core auth & profiles
+// ─────────────────────────────────────────────────────────────────────────────
+
+model User {
+  id           String @id @default(cuid())
+  email        String @unique
+  passwordHash String
+  name         String
+  role         Role
+
+  // Profile fields shown in the navbar/sidebar across the whole app
+  phone     String?
+  location  String? // e.g. "Lagos, Nigeria"
+  bio       String?
+  avatarUrl String?
+
+  // Verification & status
+  emailVerifiedAt DateTime?
+  isActive        Boolean   @default(true)
+
+  // Timestamps
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime? // soft delete from Settings → Privacy → Delete account
+
+  // Role-specific 1:1
+  buyerProfile  BuyerProfile?
+  agentProfile  AgentProfile?
+  vendorProfile VendorProfile?
+  settings      UserSettings?
+
+  // Auth-token relations
+  sessions                Session[]
+  refreshTokens           RefreshToken[]
+  emailVerificationTokens EmailVerificationToken[]
+  passwordResetTokens     PasswordResetToken[]
+
+  // Domain relations
+  listings                   Listing[]                 @relation("AgentListings")
+  vendorJobs                 VendorJob[]               @relation("VendorJobs")
+  vendorEarnings             VendorEarning[]           @relation("VendorEarnings")
+  vendorReviews              VendorReview[]            @relation("VendorReviews")
+  bookmarks                  Bookmark[]
+  orders                     Order[]
+  sentMessages               Message[]
+  conversationsAsParticipant ConversationParticipant[]
+  agentLeads                 Lead[]                    @relation("AgentLeads")
+  buyerLeads                 Lead[]                    @relation("BuyerLeads")
+  agentViewings              Viewing[]                 @relation("AgentViewings")
+  buyerViewings              Viewing[]                 @relation("BuyerViewings")
+  agentReviewsReceived       AgentReview[]             @relation("AgentReviewsReceived")
+  agentReviewsWritten        AgentReview[]             @relation("AgentReviewsWritten")
+  vendorBookings             VendorJob[]               @relation("VendorBuyerJobs")
+  logbookEntries             LogbookEntry[]            @relation("LogbookOwner")
+  shortletBookings           ShortletBooking[]         @relation("BuyerShortlets")
+  rentalApplications         RentalApplication[]       @relation("BuyerRentals")
+
+  @@index([role])
+}
+
+model BuyerProfile {
+  id                 String   @id @default(cuid())
+  userId             String   @unique
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lookingFor         String? // "Buy a home" | "Rent a home" | "Shortlet stay" | "Just browsing"
+  preferredLocations String? // free text from Onboarding (e.g. "Lekki, Ikoyi, Victoria Island")
+  budgetRange        String? // "Under ₦50M" | "₦50M – ₦100M" | "₦100M – ₦200M" | "₦200M+"
+  budgetMin          Int? // naira; nullable until set
+  budgetMax          Int?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+}
+
+model AgentProfile {
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Onboarding fields
+  agencyName      String
+  licenseNumber   String @unique
+  businessAddress String
+
+  // Profile + directory fields (Agent interface in src/data/agents.ts)
+  yearsExperience Int      @default(0)
+  specialty       String[] // e.g. ["Buy", "Rent", "Shortlet", "Commercial"]
+  website         String?
+
+  // Public stats — denormalised; recomputed on listing changes
+  rating          Float   @default(0)
+  listingsCount   Int     @default(0)
+  soldRentedCount Int     @default(0)
+  verified        Boolean @default(false) // KYC via Smile Identity
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model VendorProfile {
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Onboarding fields
+  serviceCategory String // Plumber, Electrician, Builder, etc.
+  yearsExperience String // free text in onboarding ("5 years")
+  serviceArea     String // e.g. "Lekki, Ajah, Victoria Island"
+
+  // Directory fields (Vendor interface in src/data/vendors.ts)
+  priceLabel String? // "From ₦15,000"
+  priceNum   Int? // 15000
+
+  // Media
+  bannerImage      String? // Hero image for directory card
+  portfolioImages  String[] // Past work samples
+  availableForHire Boolean  @default(true)
+
+  // Stats
+  rating    Float    @default(0)
+  jobsCount Int      @default(0)
+  verified  Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model UserSettings {
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Notifications (5 toggles in Settings.tsx)
+  notifEmail       Boolean @default(true)
+  notifSms         Boolean @default(true)
+  notifMessages    Boolean @default(true)
+  notifPriceAlerts Boolean @default(true)
+  notifMarketing   Boolean @default(false)
+
+  // Privacy
+  profileVisible Boolean @default(true)
+  shareActivity  Boolean @default(false)
+
+  // Preferences
+  language String @default("English")
+  currency String @default("NGN")
+
+  // Security
+  twoFactorEnabled Boolean @default(false)
+  twoFactorSecret  String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Auth tokens — sessions + rotating refresh + verification + reset
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Session {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Opaque session token (hashed at rest)
+  tokenHash String @unique
+
+  // Device metadata for the Settings "active devices" UI
+  userAgent   String?
+  ipAddress   String?
+  deviceLabel String? // e.g. "Chrome on Windows"
+
+  // Lifecycle
+  lastSeenAt DateTime  @default(now())
+  expiresAt  DateTime
+  revokedAt  DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model RefreshToken {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  tokenHash String @unique
+
+  // Rotation chain — when this token is used, a new one is issued and this one
+  // is marked replaced. Reuse of a replaced token = stolen token = revoke chain.
+  replacedById String?
+
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+}
+
+model EmailVerificationToken {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+}
+
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // Frontend ForgotPassword.tsx uses a 6-digit code flow → store hash of code
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Domain — listings, products, bookmarks, conversations, orders, vendor work
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Listing {
+  id      String @id @default(cuid())
+  agentId String
+  agent   User   @relation("AgentListings", fields: [agentId], references: [id], onDelete: Cascade)
+
+  // From Listing interface in src/data/listings.ts
+  title        String
+  slug         String      @unique
+  type         ListingType
+  propertyType String // "Flat / Apartment", "Detached House", etc.
+  priceNaira   Int // store as integer naira
+  priceLabel   String // "₦65,000,000" — keep frontend's formatted string for backwards compat
+  period       String? // "/year" for rentals, "/night" for shortlets
+  address      String
+  location     String // "Lekki, Lagos"
+  beds         Int
+  baths        Int
+  sqft         String // free-text, matches frontend ("2,400")
+  yearBuilt    String
+  description  String
+  features     String[] // ["24hr Power", "Swimming Pool", ...]
+  coverImage   String
+  images       String[]
+  rating       Float         @default(0)
+  verified     Boolean       @default(false)
+  status       ListingStatus @default(PENDING_REVIEW)
+  viewsCount   Int           @default(0)
+  // Video tour fields (matches data/videos.ts VideoListing interface)
+  virtualTourUrl String? // YouTube embed URL
+  videoThumbnail String? // Thumbnail image for video card
+  videoDuration  String? // e.g. "2:34"
+  videoViewCount Int     @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  documents         ListingDocument[]
+  bookmarkedBy      Bookmark[]        @relation("ListingBookmarks")
+  leads             Lead[]
+  viewings          Viewing[]
+  shortletBookings  ShortletBooking[]
+  rentalApplications RentalApplication[]
+  logbookEntries LogbookEntry[]
+
+  @@index([agentId])
+  @@index([type])
+  @@index([location])
+  @@index([status])
+}
+
+model ListingDocument {
+  id        String       @id @default(cuid())
+  listingId String
+  listing   Listing      @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  name      String // "Certificate of Occupancy"
+  type      DocumentType
+  verified  Boolean      @default(false)
+  date      String // matches frontend's free-text "Sep 2022"
+  createdAt DateTime     @default(now())
+
+  @@index([listingId])
+}
+
+model Product {
+  id           String   @id @default(cuid())
+  slug         String   @unique
+  name         String
+  supplier     String
+  category     String // "Cement & Concrete", "Roofing", ...
+  description  String
+  priceNaira   Int
+  priceLabel   String
+  unit         String // "bag", "sqm", "litre"
+  minOrder     String // "10 bags"
+  location     String
+  phone        String
+  coverImage   String
+  images       String[]
+  specs        Json // [{label, value}, ...] — flexible per product
+  rating       Float    @default(0)
+  reviewsCount Int      @default(0)
+  verified     Boolean  @default(false)
+  inStock      Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  bookmarkedBy Bookmark[]  @relation("ProductBookmarks")
+  orderItems   OrderItem[]
+
+  @@index([category])
+}
+
+model Bookmark {
+  id     String       @id @default(cuid())
+  userId String
+  user   User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type   BookmarkType
+
+  // Optional typed FKs — only one is set per row, depending on `type`
+  listingId    String?
+  listing      Listing? @relation("ListingBookmarks", fields: [listingId], references: [id], onDelete: Cascade)
+  productId    String?
+  product      Product? @relation("ProductBookmarks", fields: [productId], references: [id], onDelete: Cascade)
+  // For "service" bookmarks, points at a vendor User row
+  vendorUserId String?
+
+  createdAt DateTime @default(now())
+
+  @@unique([userId, type, listingId, productId, vendorUserId])
+  @@index([userId])
+}
+
+model Conversation {
+  id String @id @default(cuid())
+
+  // Optional context — what the conversation is about
+  listingId String?
+  productId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  participants ConversationParticipant[]
+  messages     Message[]
+}
+
+model ConversationParticipant {
+  id             String                      @id @default(cuid())
+  conversationId String
+  conversation   Conversation                @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User                        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role           ConversationParticipantRole
+  unreadCount    Int                         @default(0)
+
+  @@unique([conversationId, userId])
+  @@index([userId])
+}
+
+model Message {
+  id             String       @id @default(cuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  senderUserId   String
+  sender         User         @relation(fields: [senderUserId], references: [id], onDelete: Cascade)
+  text           String
+  createdAt      DateTime     @default(now())
+
+  @@index([conversationId])
+}
+
+model Order {
+  id String @id @default(cuid())
+
+  // Human-readable order number shown in OrderConfirmation.tsx ("MAT-...")
+  orderNumber String @unique
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Delivery details (Checkout.tsx)
+  recipientName String
+  phone         String
+  address       String
+  city          String
+  notes         String?
+
+  // Money — naira-int to match frontend math
+  subtotal    Int
+  deliveryFee Int
+  serviceFee  Int
+  total       Int
+  payMethod   OrderPaymentMethod
+
+  placedAt DateTime @default(now())
+
+  items OrderItem[]
+
+  @@index([userId])
+}
+
+model OrderItem {
+  id        String  @id @default(cuid())
+  orderId   String
+  order     Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product @relation(fields: [productId], references: [id])
+
+  // Snapshot the product fields at order time so they don't change if Product is edited
+  name       String
+  supplier   String
+  image      String
+  priceLabel String
+  unit       String
+  unitPrice  Int // naira at time of order
+  quantity   Int
+
+  @@index([orderId])
+}
+
+// Vendor work (matches src/data/vendor-dashboard.ts interfaces)
+
+model VendorJob {
+  id           String @id @default(cuid())
+  vendorUserId String
+  vendor       User   @relation("VendorJobs", fields: [vendorUserId], references: [id], onDelete: Cascade)
+
+  // Buyer who booked the job (null for guest bookings)
+  buyerUserId String?
+  buyer       User?   @relation("VendorBuyerJobs", fields: [buyerUserId], references: [id], onDelete: SetNull)
+
+  title        String
+  clientName   String
+  clientAvatar String?
+  clientPhone  String
+  clientEmail  String?
+  address      String
+  category     String
+  status       JobStatus @default(PENDING)
+  amount       Int // naira — legacy, same as vendorFee
+  description  String
+  scheduledFor DateTime?
+
+  // Booking details (from BookService.tsx)
+  negotiationNotes String? // Free-text negotiation notes between buyer & vendor
+  preferredTime    String? // e.g. "Morning", "Afternoon", "Evening"
+
+  // Escrow (placeholder until Paystack wiring)
+  escrowId      String?      @unique
+  escrowStatus  EscrowStatus @default(NONE)
+  escrowAmount  Int          @default(0) // vendorFee + platformFee
+  vendorFee     Int          @default(0)
+  platformFee   Int          @default(0) // 10% PropertyLoop takes
+  paymentMethod String?
+
+  // Completion & dispute
+  completionProofImages String[]
+  completionNotes       String?
+  completedAt           DateTime?
+  confirmedAt           DateTime?
+  disputeReason         String?
+  disputedAt            DateTime?
+  refundedAt            DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  earning      VendorEarning?
+  reviews      VendorReview[]
+  logbookEntry LogbookEntry?
+
+  @@index([vendorUserId])
+  @@index([buyerUserId])
+  @@index([status])
+  @@index([escrowStatus])
+}
+
+model VendorEarning {
+  id           String    @id @default(cuid())
+  vendorUserId String
+  vendor       User      @relation("VendorEarnings", fields: [vendorUserId], references: [id], onDelete: Cascade)
+  jobId        String    @unique
+  job          VendorJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  jobTitle   String
+  clientName String
+  amount     Int
+  status     EarningStatus @default(PENDING)
+  paidAt     DateTime?
+  createdAt  DateTime      @default(now())
+
+  @@index([vendorUserId])
+}
+
+model VendorReview {
+  id           String     @id @default(cuid())
+  vendorUserId String
+  vendor       User       @relation("VendorReviews", fields: [vendorUserId], references: [id], onDelete: Cascade)
+  jobId        String?
+  job          VendorJob? @relation(fields: [jobId], references: [id], onDelete: SetNull)
+
+  clientName   String
+  clientAvatar String?
+  rating       Int // 1–5
+  comment      String
+  jobTitle     String
+  createdAt    DateTime @default(now())
+
+  @@index([vendorUserId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Agent leads, viewings, and reviews
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Lead {
+  id        String @id @default(cuid())
+  // Agent who owns the lead (the listing's agent)
+  agentId   String
+  agent     User   @relation("AgentLeads", fields: [agentId], references: [id], onDelete: Cascade)
+  // Listing the lead is interested in
+  listingId String
+  listing   Listing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  // Optional buyer user (null for guest enquiries)
+  buyerUserId String?
+  buyer       User?   @relation("BuyerLeads", fields: [buyerUserId], references: [id], onDelete: SetNull)
+
+  // Snapshotted contact info (in case the buyer is a guest)
+  name    String
+  email   String?
+  phone   String
+  message String?
+
+  status      LeadStatus @default(NEW)
+  source      LeadSource @default(LISTING_PAGE)
+  // Free-text agent notes
+  notes       String?
+  contactedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([agentId])
+  @@index([listingId])
+  @@index([status])
+}
+
+model Viewing {
+  id        String @id @default(cuid())
+  agentId   String
+  agent     User   @relation("AgentViewings", fields: [agentId], references: [id], onDelete: Cascade)
+  listingId String
+  listing   Listing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  buyerUserId String?
+  buyer       User?   @relation("BuyerViewings", fields: [buyerUserId], references: [id], onDelete: SetNull)
+
+  // Snapshotted contact info
+  clientName  String
+  clientPhone String
+  clientEmail String?
+
+  scheduledFor DateTime
+  status       ViewingStatus @default(PENDING)
+  notes        String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([agentId])
+  @@index([listingId])
+  @@index([scheduledFor])
+  @@index([status])
+}
+
+model AgentReview {
+  id String @id @default(cuid())
+  // Agent being reviewed
+  agentUserId String
+  agent       User   @relation("AgentReviewsReceived", fields: [agentUserId], references: [id], onDelete: Cascade)
+  // Reviewer (optional — guest reviews allowed)
+  reviewerUserId String?
+  reviewer       User?   @relation("AgentReviewsWritten", fields: [reviewerUserId], references: [id], onDelete: SetNull)
+  // Snapshotted reviewer name
+  reviewerName String
+
+  rating  Int    // 1-5
+  comment String
+
+  createdAt DateTime @default(now())
+
+  @@index([agentUserId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Blog
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum BlogCategory {
+  MARKET_INSIGHTS
+  GUIDES
+  PRODUCT_UPDATES
+  AGENT_TIPS
+}
+
+model BlogPost {
+  id        String       @id @default(cuid())
+  slug      String       @unique
+  title     String
+  excerpt   String
+  content   String[] // Array of paragraphs / markdown blocks
+  category  BlogCategory
+  image     String // Cover image URL
+  author    String
+  avatar    String? // Author avatar URL
+  readTime  String // e.g. "5 min read"
+  published Boolean      @default(false)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  @@index([category])
+  @@index([published])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Property Logbook — permanent maintenance history per property
+// ─────────────────────────────────────────────────────────────────────────────
+
+model LogbookEntry {
+  id        String @id @default(cuid())
+  // Property reference (nullable for vendor jobs not yet linked to a property)
+  listingId String?
+  listing   Listing? @relation(fields: [listingId], references: [id], onDelete: SetNull)
+  // Vendor job that generated this entry (auto-logged on escrow release)
+  jobId     String?  @unique
+  job       VendorJob? @relation(fields: [jobId], references: [id], onDelete: SetNull)
+  // Owner at time of entry
+  ownerUserId String
+  owner       User @relation("LogbookOwner", fields: [ownerUserId], references: [id], onDelete: Cascade)
+
+  // Entry details (snapshot from completed VendorJob)
+  category    String // Plumbing, Electrical, etc.
+  title       String // Job title / summary
+  description String?
+  vendorName  String
+  vendorId    String?
+  cost        Int // naira
+  completedAt DateTime
+  verified    Boolean @default(false) // true when confirmed via escrow
+
+  createdAt DateTime @default(now())
+
+  @@index([listingId])
+  @@index([ownerUserId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Partners — displayed on homepage partner logo section
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Partner {
+  id       String  @id @default(cuid())
+  name     String
+  logoUrl  String
+  website  String?
+  sortOrder Int    @default(0)
+  active   Boolean @default(true)
+  createdAt DateTime @default(now())
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Shortlet bookings & rental applications (buyer-side)
+// ─────────────────────────────────────────────────────────────────────────────
+
+model ShortletBooking {
+  id          String @id @default(cuid())
+  listingId   String
+  listing     Listing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  buyerUserId String?
+  buyer       User?   @relation("BuyerShortlets", fields: [buyerUserId], references: [id], onDelete: SetNull)
+
+  guestName  String
+  guestPhone String
+  guestEmail String?
+  guests     Int
+
+  checkIn  DateTime
+  checkOut DateTime
+  nights   Int
+
+  subtotal   Int // pricePerNight * nights
+  serviceFee Int // 10%
+  total      Int
+
+  paymentMethod String?
+  escrowId      String?              @unique
+  escrowStatus  EscrowStatus         @default(NONE)
+  status        ShortletBookingStatus @default(PENDING)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([listingId])
+  @@index([buyerUserId])
+  @@index([status])
+}
+
+model RentalApplication {
+  id          String @id @default(cuid())
+  listingId   String
+  listing     Listing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  buyerUserId String?
+  buyer       User?   @relation("BuyerRentals", fields: [buyerUserId], references: [id], onDelete: SetNull)
+
+  applicantName  String
+  applicantPhone String
+  applicantEmail String?
+
+  deposit       Int // annual rent
+  agencyFee     Int // 10%
+  legalFee      Int
+  serviceFee    Int // 5%
+  total         Int
+
+  leaseDuration String   // "12 months"
+  startDate     DateTime
+
+  paymentMethod String?
+  escrowId      String?                  @unique
+  escrowStatus  EscrowStatus             @default(NONE)
+  status        RentalApplicationStatus  @default(PENDING)
+
+  signedAt  DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([listingId])
+  @@index([buyerUserId])
+  @@index([status])
 }
