@@ -352,6 +352,41 @@ export class VendorsService {
     return review;
   }
 
+  // ─── Stats ────────────────────────────────────────────────────────────────
+
+  async getPublicStats() {
+    const allVendors = await this.prisma.user.findMany({
+      where: {
+        role: Role.VENDOR,
+        isActive: true,
+        deletedAt: null,
+        vendorProfile: { is: { availableForHire: true } },
+      },
+      include: { vendorProfile: true },
+    });
+
+    // Count by category
+    const categoryCounts: Record<string, number> = {};
+    for (const vendor of allVendors) {
+      const cat = vendor.vendorProfile?.serviceCategory || 'Other';
+      categoryCounts[cat] = (categoryCounts[cat] ?? 0) + 1;
+    }
+
+    return {
+      total: allVendors.length,
+      byCategory: categoryCounts,
+      averageRating:
+        allVendors.length > 0
+          ? Number(
+              (
+                allVendors.reduce((sum, v) => sum + (v.vendorProfile?.rating ?? 0), 0) /
+                allVendors.length
+              ).toFixed(2),
+            )
+          : 0,
+    };
+  }
+
   // ─── Serializers ──────────────────────────────────────────────────────────
 
   private serializePublic(user: any) {

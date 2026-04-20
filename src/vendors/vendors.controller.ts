@@ -35,6 +35,11 @@ export class VendorsController {
     return this.vendorsService.list(query);
   }
 
+  @Get('stats')
+  getPublicStats() {
+    return this.vendorsService.getPublicStats();
+  }
+
   // ─── Authenticated vendor (must come before :id route) ──────────────────
 
   @UseGuards(JwtAuthGuard, RolesGuard)

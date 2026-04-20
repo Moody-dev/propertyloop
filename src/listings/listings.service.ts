@@ -312,6 +312,47 @@ export class ListingsService {
     return { success: true };
   }
 
+  // ─── Stats ────────────────────────────────────────────────────────────────
+
+  async getStats(type: 'SALE' | 'RENT') {
+    const where: Prisma.ListingWhereInput = {
+      type,
+      status: ListingStatus.ACTIVE,
+    };
+
+    // Get counts by property type
+    const allListings = await this.prisma.listing.findMany({
+      where,
+      select: { propertyType: true, priceNaira: true },
+    });
+
+    // Count by type
+    const typeCounts: Record<string, number> = {};
+    let totalPrice = 0;
+    for (const listing of allListings) {
+      typeCounts[listing.propertyType] = (typeCounts[listing.propertyType] ?? 0) + 1;
+      totalPrice += listing.priceNaira;
+    }
+
+    const total = allListings.length;
+    const avgPrice = total > 0 ? Math.round(totalPrice / total) : 0;
+
+    return {
+      total,
+      byType: typeCounts,
+      avgPrice,
+      newThisWeek: await this.prisma.listing.count({
+        where: {
+          ...where,
+          createdAt: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) },
+        },
+      }),
+      verifiedAgents: await this.prisma.agentProfile.count({
+        where: { verified: true },
+      }),
+    };
+  }
+
   // ─── Helpers ──────────────────────────────────────────────────────────────
 
   private async generateUniqueSlug(title: string): Promise<string> {

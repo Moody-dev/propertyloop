@@ -41,6 +41,11 @@ export class ListingsController {
     return this.listingsService.list(query);
   }
 
+  @Get('stats/:type')
+  getStats(@Param('type') type: 'SALE' | 'RENT') {
+    return this.listingsService.getStats(type);
+  }
+
   // ─── Agent-owned (must come before :id) ──────────────────────────────────
 
   @UseGuards(JwtAuthGuard, RolesGuard)
