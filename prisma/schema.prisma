@@ -198,6 +198,7 @@ model User {
   vendorEarnings             VendorEarning[]           @relation("VendorEarnings")
   vendorReviews              VendorReview[]            @relation("VendorReviews")
   bookmarks                  Bookmark[]
+  vendorBookmarks            Bookmark[]               @relation("VendorBookmarks")
   orders                     Order[]
   sentMessages               Message[]
   conversationsAsParticipant ConversationParticipant[]
@@ -504,6 +505,7 @@ model Bookmark {
   product      Product? @relation("ProductBookmarks", fields: [productId], references: [id], onDelete: Cascade)
   // For "service" bookmarks, points at a vendor User row
   vendorUserId String?
+  vendor       User?    @relation("VendorBookmarks", fields: [vendorUserId], references: [id], onDelete: Cascade)
 
   createdAt DateTime @default(now())
 
