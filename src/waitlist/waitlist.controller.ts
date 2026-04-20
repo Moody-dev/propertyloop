@@ -32,8 +32,6 @@ export class WaitlistController {
     return this.waitlistService.create(createWaitlistDto);
   }
 
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(Role.AGENT)
   @Get()
   findAll() {
     return this.waitlistService.findAll();
