@@ -11,6 +11,7 @@ async function bootstrap() {
   app.use(compression());
 
   const prodOrigins = [
+    'https://propertyloopmain.netlify.app',
     'https://property-loop.netlify.app',
     'https://waitlist.propertyloop.ng',
     'https://propertyloop.ng',
