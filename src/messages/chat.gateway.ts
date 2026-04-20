@@ -18,6 +18,7 @@ import type { JwtPayload } from '../auth/strategies/jwt.strategy';
   cors: {
     origin: [
       'http://localhost:5173',
+      'https://propertyloopmain.netlify.app',
       'https://property-loop.netlify.app',
       'https://propertyloop.ng',
       'https://www.propertyloop.ng',
