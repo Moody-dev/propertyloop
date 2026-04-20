@@ -9,10 +9,12 @@ export class CreateConversationDto {
 
   /** Role of the recipient in this conversation */
   @IsEnum(ConversationParticipantRole)
+  @IsNotEmpty()
   recipientRole: ConversationParticipantRole;
 
   /** Role of the sender (current user) */
   @IsEnum(ConversationParticipantRole)
+  @IsNotEmpty()
   senderRole: ConversationParticipantRole;
 
   /** Optional first message */

@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
@@ -39,6 +40,18 @@ export class MessagesController {
     @CurrentUser() user: CurrentUserData,
     @Body() dto: CreateConversationDto,
   ) {
+    if (!user?.id) {
+      throw new BadRequestException('User not authenticated');
+    }
+    if (!dto?.recipientId) {
+      throw new BadRequestException('recipientId is required');
+    }
+    if (!dto?.recipientRole) {
+      throw new BadRequestException('recipientRole is required');
+    }
+    if (!dto?.senderRole) {
+      throw new BadRequestException('senderRole is required');
+    }
     return this.messagesService.createOrFind(user.id, dto);
   }
 
