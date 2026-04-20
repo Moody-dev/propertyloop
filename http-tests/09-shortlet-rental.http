@@ -1,0 +1,123 @@
+### ─── PropertyLoop Shortlet Bookings & Rental Applications ──────────────────
+### Login as buyer
+# @name loginBuyer
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "{{buyerEmail}}",
+  "password": "{{buyerPassword}}"
+}
+
+### Login as agent (to get listing IDs)
+# @name loginAgent
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "{{agentEmail}}",
+  "password": "{{agentPassword}}"
+}
+
+### Get agent's listings
+# @name agentListings
+GET {{baseUrl}}/listings/me/all
+Authorization: Bearer {{loginAgent.response.body.accessToken}}
+### ═══════════════════════════════════════════════════════════════════════════
+### SHORTLET BOOKINGS
+### ═══════════════════════════════════════════════════════════════════════════
+
+### ═══ 1. Book a shortlet ═══
+### NOTE: This requires a SHORTLET listing to exist. Use the shortlet listing
+### created in 04-listings.http. Replace the listingId if needed.
+# @name bookShortlet
+POST {{baseUrl}}/shortlet-bookings
+Authorization: Bearer {{loginBuyer.response.body.accessToken}}
+Content-Type: application/json
+
+{
+  "listingId": "{{agentListings.response.body.items[0].id}}",
+  "guestName": "Tunde Akinola",
+  "guestPhone": "+2348012345678",
+  "guestEmail": "tunde.buyer@test.com",
+  "guests": 2,
+  "checkIn": "2026-04-25T14:00:00.000Z",
+  "checkOut": "2026-04-28T11:00:00.000Z",
+  "paymentMethod": "card"
+}
+
+### ═══ 2. List buyer's shortlet bookings ═══
+GET {{baseUrl}}/shortlet-bookings
+Authorization: Bearer {{loginBuyer.response.body.accessToken}}
+
+### ═══ 3. Get single booking ═══
+GET {{baseUrl}}/shortlet-bookings/{{bookShortlet.response.body.id}}
+Authorization: Bearer {{loginBuyer.response.body.accessToken}}
+
+### ═══ 4. Cancel shortlet booking ═══
+POST {{baseUrl}}/shortlet-bookings/{{bookShortlet.response.body.id}}/cancel
+Authorization: Bearer {{loginBuyer.response.body.accessToken}}
+### ═══════════════════════════════════════════════════════════════════════════
+### RENTAL APPLICATIONS
+### ═══════════════════════════════════════════════════════════════════════════
+
+### ═══ 5. Apply for a rental ═══
+### NOTE: This requires a RENT listing. Use the rental listing created in 04-listings.http.
+# @name applyRental
+POST {{baseUrl}}/rental-applications
+Authorization: Bearer {{loginBuyer.response.body.accessToken}}
+Content-Type: application/json
+
+{
+  "listingId": "{{agentListings.response.body.items[0].id}}",
+  "applicantName": "Tunde Akinola",
+  "applicantPhone": "+2348012345678",
+  "applicantEmail": "tunde.buyer@test.com",
+  "deposit": 3500000,
+  "agencyFee": 350000,
+  "legalFee": 150000,
+  "leaseDuration": "12 months",
+  "startDate": "2026-05-01T00:00:00.000Z",
+  "paymentMethod": "transfer"
+}
+
+### ═══ 6. List rental applications ═══
+GET {{baseUrl}}/rental-applications
+Authorization: Bearer {{loginBuyer.response.body.accessToken}}
+
+### ═══ 7. Get single application ═══
+GET {{baseUrl}}/rental-applications/{{applyRental.response.body.id}}
+Authorization: Bearer {{loginBuyer.response.body.accessToken}}
+
+### ═══ 8. Mark deposit paid ═══
+POST {{baseUrl}}/rental-applications/{{applyRental.response.body.id}}/deposit-paid
+Authorization: Bearer {{loginBuyer.response.body.accessToken}}
+
+### ═══ 9. Sign agreement (activates lease, releases escrow) ═══
+POST {{baseUrl}}/rental-applications/{{applyRental.response.body.id}}/sign
+Authorization: Bearer {{loginBuyer.response.body.accessToken}}
+
+### ═══ 10. Verify: status=ACTIVE, escrowStatus=RELEASED, signedAt set ═══
+GET {{baseUrl}}/rental-applications/{{applyRental.response.body.id}}
+Authorization: Bearer {{loginBuyer.response.body.accessToken}}
+
+### ═══ 11. Cancel flow (new application) ═══
+# @name cancelRental
+POST {{baseUrl}}/rental-applications
+Authorization: Bearer {{loginBuyer.response.body.accessToken}}
+Content-Type: application/json
+
+{
+  "listingId": "{{agentListings.response.body.items[0].id}}",
+  "applicantName": "Tunde Akinola",
+  "applicantPhone": "+2348012345678",
+  "deposit": 3500000,
+  "agencyFee": 350000,
+  "legalFee": 150000,
+  "leaseDuration": "12 months",
+  "startDate": "2026-06-01T00:00:00.000Z"
+}
+
+### ═══ 12. Cancel the application ═══
+POST {{baseUrl}}/rental-applications/{{cancelRental.response.body.id}}/cancel
+Authorization: Bearer {{loginBuyer.response.body.accessToken}}

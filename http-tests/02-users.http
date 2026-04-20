@@ -1,0 +1,47 @@
+### ─── PropertyLoop Users Endpoints ──────────────────────────────────────────
+### First login to get tokens
+# @name loginBuyer
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "{{buyerEmail}}",
+  "password": "{{buyerPassword}}"
+}
+
+### ═══ 1. Get profile ═══
+GET {{baseUrl}}/users/me
+Authorization: Bearer {{loginBuyer.response.body.accessToken}}
+
+### ═══ 2. Update profile ═══
+PATCH {{baseUrl}}/users/me
+Authorization: Bearer {{loginBuyer.response.body.accessToken}}
+Content-Type: application/json
+
+{
+  "name": "Tunde Akinola",
+  "phone": "+2348012345678",
+  "location": "Lekki, Lagos",
+  "bio": "First-time buyer looking for a family home in Lekki"
+}
+
+### ═══ 3. Get settings ═══
+GET {{baseUrl}}/users/me/settings
+Authorization: Bearer {{loginBuyer.response.body.accessToken}}
+
+### ═══ 4. Update settings ═══
+PATCH {{baseUrl}}/users/me/settings
+Authorization: Bearer {{loginBuyer.response.body.accessToken}}
+Content-Type: application/json
+
+{
+  "notifEmail": true,
+  "notifSms": false,
+  "notifMessages": true,
+  "notifPriceAlerts": true,
+  "notifMarketing": false,
+  "profileVisible": true,
+  "shareActivity": false,
+  "language": "English",
+  "currency": "NGN"
+}

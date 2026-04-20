@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { APP_GUARD } from '@nestjs/core';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { WaitlistModule } from './waitlist/waitlist.module';
@@ -19,12 +21,24 @@ import { ProductsModule } from './products/products.module';
 import { OrdersModule } from './orders/orders.module';
 import { ShortletBookingsModule } from './shortlet-bookings/shortlet-bookings.module';
 import { RentalApplicationsModule } from './rental-applications/rental-applications.module';
+import { MessagesModule } from './messages/messages.module';
+import { StorageModule } from './storage/storage.module';
+import { PaymentsModule } from './payments/payments.module';
+import { AdminModule } from './admin/admin.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    ThrottlerModule.forRoot([
+      {
+        ttl: 60000,
+        limit: 30,
+      },
+    ]),
     PrismaModule,
     MailModule,
+    StorageModule,
+    PaymentsModule,
     WaitlistModule,
     AuthModule,
     UsersModule,
@@ -40,8 +54,10 @@ import { RentalApplicationsModule } from './rental-applications/rental-applicati
     OrdersModule,
     ShortletBookingsModule,
     RentalApplicationsModule,
+    MessagesModule,
+    AdminModule,
   ],
   controllers: [AppController],
-  providers: [AppService],
+  providers: [AppService, { provide: APP_GUARD, useClass: ThrottlerGuard }],
 })
 export class AppModule {}

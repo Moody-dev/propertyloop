@@ -187,6 +187,7 @@ export class ListingsService {
         coverImage: dto.coverImage,
         images: dto.images,
         virtualTourUrl: dto.virtualTourUrl,
+        videoUrl: dto.videoUrl,
         status: ListingStatus.PENDING_REVIEW,
       },
       include: { documents: true },
@@ -229,6 +230,7 @@ export class ListingsService {
     if (dto.coverImage !== undefined) data.coverImage = dto.coverImage;
     if (dto.images !== undefined) data.images = dto.images;
     if (dto.virtualTourUrl !== undefined) data.virtualTourUrl = dto.virtualTourUrl;
+    if (dto.videoUrl !== undefined) data.videoUrl = dto.videoUrl;
     if (dto.status !== undefined) {
       data.status = dto.status;
       // If marked sold/rented, bump agent's deal counter

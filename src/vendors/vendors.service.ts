@@ -165,6 +165,7 @@ export class VendorsService {
             ...(dto.serviceArea !== undefined && { serviceArea: dto.serviceArea }),
             ...(dto.priceLabel !== undefined && { priceLabel: dto.priceLabel }),
             ...(dto.priceNum !== undefined && { priceNum: dto.priceNum }),
+            ...(dto.website !== undefined && { website: dto.website }),
             ...(dto.bannerImage !== undefined && { bannerImage: dto.bannerImage }),
             ...(dto.portfolioImages !== undefined && { portfolioImages: dto.portfolioImages }),
             ...(dto.availableForHire !== undefined && { availableForHire: dto.availableForHire }),

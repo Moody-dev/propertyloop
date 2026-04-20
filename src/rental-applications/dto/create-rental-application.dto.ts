@@ -2,6 +2,7 @@ import { Type } from 'class-transformer';
 import {
   IsDate,
   IsEmail,
+  IsIn,
   IsInt,
   IsNotEmpty,
   IsOptional,
@@ -26,5 +27,5 @@ export class CreateRentalApplicationDto {
   @IsString() @IsNotEmpty() @MaxLength(40) leaseDuration: string;
   @Type(() => Date) @IsDate() startDate: Date;
 
-  @IsString() @IsOptional() @MaxLength(20) paymentMethod?: string;
+  @IsOptional() @IsIn(['CARD', 'TRANSFER', 'WALLET']) paymentMethod?: string;
 }

@@ -1,0 +1,150 @@
+### ─── PropertyLoop Auth Endpoints ───────────────────────────────────────────
+
+### ═══ 1. Signup — Buyer ═══
+# @name signupBuyer
+POST {{baseUrl}}/auth/signup
+Content-Type: application/json
+
+{
+  "name": "Tunde Buyer",
+  "email": "{{buyerEmail}}",
+  "password": "{{buyerPassword}}",
+  "phone": "+2348012345678",
+  "role": "BUYER",
+  "buyer": {
+    "preferredLocations": "Lekki, Ikoyi, Victoria Island"
+  }
+}
+
+### ═══ 2. Signup — Agent ═══
+# @name signupAgent
+POST {{baseUrl}}/auth/signup
+Content-Type: application/json
+
+{
+  "name": "Chioma Agent",
+  "email": "{{agentEmail}}",
+  "password": "{{agentPassword}}",
+  "phone": "+2348023456789",
+  "role": "AGENT",
+  "agent": {
+    "agencyName": "Prime Realty Lagos",
+    "licenseNumber": "NIESV/2026/TEST001",
+    "businessAddress": "12 Admiralty Way, Lekki Phase 1"
+  }
+}
+
+### ═══ 3. Signup — Vendor ═══
+# @name signupVendor
+POST {{baseUrl}}/auth/signup
+Content-Type: application/json
+
+{
+  "name": "Emeka Vendor",
+  "email": "{{vendorEmail}}",
+  "password": "{{vendorPassword}}",
+  "phone": "+2348034567890",
+  "role": "VENDOR",
+  "vendor": {
+    "serviceCategory": "Plumbing",
+    "yearsExperience": "8 years",
+    "serviceArea": "Lekki, Ajah, Victoria Island"
+  }
+}
+
+### ═══ 4. Login — Buyer ═══
+# @name loginBuyer
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "{{buyerEmail}}",
+  "password": "{{buyerPassword}}"
+}
+
+### ═══ 5. Login — Agent ═══
+# @name loginAgent
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "{{agentEmail}}",
+  "password": "{{agentPassword}}"
+}
+
+### ═══ 6. Login — Vendor ═══
+# @name loginVendor
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "{{vendorEmail}}",
+  "password": "{{vendorPassword}}"
+}
+
+### ═══ 7. Get current user (me) ═══
+GET {{baseUrl}}/auth/me
+Authorization: Bearer {{loginBuyer.response.body.accessToken}}
+
+### ═══ 8. Refresh token ═══
+POST {{baseUrl}}/auth/refresh
+Content-Type: application/json
+
+{
+  "refreshToken": "{{loginBuyer.response.body.refreshToken}}"
+}
+
+### ═══ 9. Forgot password ═══
+POST {{baseUrl}}/auth/forgot-password
+Content-Type: application/json
+
+{
+  "email": "{{buyerEmail}}"
+}
+
+### ═══ 10. Change password (authenticated) ═══
+POST {{baseUrl}}/auth/change-password
+Authorization: Bearer {{loginBuyer.response.body.accessToken}}
+Content-Type: application/json
+
+{
+  "currentPassword": "{{buyerPassword}}",
+  "newPassword": "NewPassword456!"
+}
+
+### ═══ 11. List sessions ═══
+GET {{baseUrl}}/auth/sessions
+Authorization: Bearer {{loginBuyer.response.body.accessToken}}
+
+### ═══ 12. Logout ═══
+POST {{baseUrl}}/auth/logout
+Authorization: Bearer {{loginBuyer.response.body.accessToken}}
+Content-Type: application/json
+
+{
+  "refreshToken": "{{loginBuyer.response.body.refreshToken}}"
+}
+
+### ═══ 13. Logout all sessions ═══
+POST {{baseUrl}}/auth/logout-all
+Authorization: Bearer {{loginAgent.response.body.accessToken}}
+
+### ═══ 14. Signup duplicate email (expect 409) ═══
+POST {{baseUrl}}/auth/signup
+Content-Type: application/json
+
+{
+  "name": "Tunde Copy",
+  "email": "{{buyerEmail}}",
+  "password": "{{buyerPassword}}",
+  "role": "BUYER"
+}
+
+### ═══ 15. Login wrong password (expect 401) ═══
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "{{buyerEmail}}",
+  "password": "wrongpassword"
+}

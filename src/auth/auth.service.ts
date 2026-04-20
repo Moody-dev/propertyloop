@@ -229,7 +229,11 @@ export class AuthService {
     // Touch session lastSeenAt if a session matches
     if (meta.userAgent) {
       await this.prisma.session.updateMany({
-        where: { userId: stored.userId, revokedAt: null, userAgent: meta.userAgent },
+        where: {
+          userId: stored.userId,
+          revokedAt: null,
+          userAgent: meta.userAgent,
+        },
         data: { lastSeenAt: new Date() },
       });
     }
@@ -331,7 +335,12 @@ export class AuthService {
     const token = await this.prisma.passwordResetToken.findUnique({
       where: { tokenHash: codeHash },
     });
-    if (!token || token.userId !== user.id || token.usedAt || token.expiresAt < new Date()) {
+    if (
+      !token ||
+      token.userId !== user.id ||
+      token.usedAt ||
+      token.expiresAt < new Date()
+    ) {
       throw new BadRequestException('Invalid or expired code');
     }
 
@@ -350,7 +359,12 @@ export class AuthService {
     const token = await this.prisma.passwordResetToken.findUnique({
       where: { tokenHash: codeHash },
     });
-    if (!token || token.userId !== user.id || token.usedAt || token.expiresAt < new Date()) {
+    if (
+      !token ||
+      token.userId !== user.id ||
+      token.usedAt ||
+      token.expiresAt < new Date()
+    ) {
       throw new BadRequestException('Invalid or expired code');
     }
 
@@ -398,6 +412,16 @@ export class AuthService {
       data: { passwordHash },
     });
 
+    // Invalidate all other sessions and refresh tokens (security best practice)
+    await this.prisma.refreshToken.updateMany({
+      where: { userId, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+    await this.prisma.session.updateMany({
+      where: { userId, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+
     return { success: true };
   }
 
@@ -405,7 +429,11 @@ export class AuthService {
   // EMAIL VERIFICATION
   // ─────────────────────────────────────────────────────────────────────────
 
-  private async sendEmailVerification(userId: string, email: string, name: string) {
+  private async sendEmailVerification(
+    userId: string,
+    email: string,
+    name: string,
+  ) {
     const rawToken = this.generateOpaqueToken();
     const tokenHash = this.hashToken(rawToken);
     const expiresAt = new Date(Date.now() + 24 * 60 * 60_000);
@@ -560,6 +588,8 @@ export class AuthService {
       {
         secret: this.configService.get<string>('JWT_ACCESS_SECRET'),
         expiresIn: this.accessTtl as any,
+        issuer: 'propertyloop',
+        audience: 'propertyloop-client',
       },
     );
   }
@@ -585,23 +615,23 @@ export class AuthService {
     const browser = /Chrome/i.test(ua)
       ? 'Chrome'
       : /Firefox/i.test(ua)
-      ? 'Firefox'
-      : /Safari/i.test(ua)
-      ? 'Safari'
-      : /Edge/i.test(ua)
-      ? 'Edge'
-      : 'Browser';
+        ? 'Firefox'
+        : /Safari/i.test(ua)
+          ? 'Safari'
+          : /Edge/i.test(ua)
+            ? 'Edge'
+            : 'Browser';
     const os = /Windows/i.test(ua)
       ? 'Windows'
       : /Mac/i.test(ua)
-      ? 'macOS'
-      : /Android/i.test(ua)
-      ? 'Android'
-      : /iPhone|iPad/i.test(ua)
-      ? 'iOS'
-      : /Linux/i.test(ua)
-      ? 'Linux'
-      : 'Unknown';
+        ? 'macOS'
+        : /Android/i.test(ua)
+          ? 'Android'
+          : /iPhone|iPad/i.test(ua)
+            ? 'iOS'
+            : /Linux/i.test(ua)
+              ? 'Linux'
+              : 'Unknown';
     return `${browser} on ${os}`;
   }
 

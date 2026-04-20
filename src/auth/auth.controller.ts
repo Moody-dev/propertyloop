@@ -22,17 +22,23 @@ import {
 } from './dto/forgot-password.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
-import { CurrentUser, CurrentUserData } from './decorators/current-user.decorator';
+import {
+  CurrentUser,
+  CurrentUserData,
+} from './decorators/current-user.decorator';
+import { Throttle } from '@nestjs/throttler';
 
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
+  @Throttle({ default: { ttl: 60000, limit: 5 } })
   @Post('signup')
   signup(@Body() dto: SignupDto, @Req() req: Request) {
     return this.authService.signup(dto, this.extractMeta(req));
   }
 
+  @Throttle({ default: { ttl: 60000, limit: 10 } })
   @Post('login')
   @HttpCode(HttpStatus.OK)
   login(@Body() dto: LoginDto, @Req() req: Request) {
@@ -48,7 +54,10 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   @Post('logout')
   @HttpCode(HttpStatus.OK)
-  logout(@CurrentUser() user: CurrentUserData, @Body() body: { refreshToken?: string }) {
+  logout(
+    @CurrentUser() user: CurrentUserData,
+    @Body() body: { refreshToken?: string },
+  ) {
     return this.authService.logout(user.id, body?.refreshToken);
   }
 
@@ -67,18 +76,21 @@ export class AuthController {
 
   // ─── Password reset ───────────────────────────────────────────────────────
 
+  @Throttle({ default: { ttl: 60000, limit: 3 } })
   @Post('forgot-password')
   @HttpCode(HttpStatus.OK)
   forgotPassword(@Body() dto: ForgotPasswordDto) {
     return this.authService.forgotPassword(dto);
   }
 
+  @Throttle({ default: { ttl: 60000, limit: 5 } })
   @Post('verify-reset-code')
   @HttpCode(HttpStatus.OK)
   verifyResetCode(@Body() dto: VerifyResetCodeDto) {
     return this.authService.verifyResetCode(dto);
   }
 
+  @Throttle({ default: { ttl: 60000, limit: 3 } })
   @Post('reset-password')
   @HttpCode(HttpStatus.OK)
   resetPassword(@Body() dto: ResetPasswordDto) {

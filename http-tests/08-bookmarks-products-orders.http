@@ -1,0 +1,124 @@
+### ─── PropertyLoop Bookmarks, Products & Orders ─────────────────────────────
+### Login as buyer
+# @name loginBuyer
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "{{buyerEmail}}",
+  "password": "{{buyerPassword}}"
+}
+
+### Login as agent (to get a listing ID)
+# @name loginAgent
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "{{agentEmail}}",
+  "password": "{{agentPassword}}"
+}
+
+### Get a listing
+# @name agentListings
+GET {{baseUrl}}/listings/me/all
+Authorization: Bearer {{loginAgent.response.body.accessToken}}
+### ═══════════════════════════════════════════════════════════════════════════
+### BOOKMARKS
+### ═══════════════════════════════════════════════════════════════════════════
+
+### ═══ 1. Toggle bookmark — add a property ═══
+POST {{baseUrl}}/bookmarks/toggle
+Authorization: Bearer {{loginBuyer.response.body.accessToken}}
+Content-Type: application/json
+
+{
+  "entityId": "{{agentListings.response.body.items[0].id}}",
+  "type": "PROPERTY"
+}
+
+### ═══ 2. Check if bookmarked ═══
+GET {{baseUrl}}/bookmarks/check?entityId={{agentListings.response.body.items[0].id}}&type=PROPERTY
+Authorization: Bearer {{loginBuyer.response.body.accessToken}}
+
+### ═══ 3. Toggle bookmark — add a vendor ═══
+# @name loginVendor
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "{{vendorEmail}}",
+  "password": "{{vendorPassword}}"
+}
+
+###
+POST {{baseUrl}}/bookmarks/toggle
+Authorization: Bearer {{loginBuyer.response.body.accessToken}}
+Content-Type: application/json
+
+{
+  "entityId": "{{loginVendor.response.body.user.id}}",
+  "type": "SERVICE"
+}
+
+### ═══ 4. List all bookmarks ═══
+GET {{baseUrl}}/bookmarks
+Authorization: Bearer {{loginBuyer.response.body.accessToken}}
+
+### ═══ 5. List bookmarks by type ═══
+GET {{baseUrl}}/bookmarks?type=PROPERTY
+Authorization: Bearer {{loginBuyer.response.body.accessToken}}
+
+### ═══ 6. Toggle bookmark — remove (same call again) ═══
+POST {{baseUrl}}/bookmarks/toggle
+Authorization: Bearer {{loginBuyer.response.body.accessToken}}
+Content-Type: application/json
+
+{
+  "entityId": "{{agentListings.response.body.items[0].id}}",
+  "type": "PROPERTY"
+}
+
+### ═══ 7. Verify removed ═══
+GET {{baseUrl}}/bookmarks/check?entityId={{agentListings.response.body.items[0].id}}&type=PROPERTY
+Authorization: Bearer {{loginBuyer.response.body.accessToken}}
+### ═══════════════════════════════════════════════════════════════════════════
+### PRODUCTS (public)
+### ═══════════════════════════════════════════════════════════════════════════
+
+### ═══ 8. List products ═══
+GET {{baseUrl}}/products?page=1&limit=10
+
+### ═══ 9. List products with filters ═══
+GET {{baseUrl}}/products?category=Cement%20%26%20Concrete&sort=price_asc
+
+### ═══ 10. Search products ═══
+GET {{baseUrl}}/products?search=dangote
+### ═══════════════════════════════════════════════════════════════════════════
+### ORDERS (authenticated buyer)
+### ═══════════════════════════════════════════════════════════════════════════
+
+### NOTE: Orders require product IDs from the database.
+### If no products are seeded, this will return 400.
+### Seed products first, then uncomment and run.
+
+### ═══ 11. Create order ═══
+# POST {{baseUrl}}/orders
+# Authorization: Bearer {{loginBuyer.response.body.accessToken}}
+# Content-Type: application/json
+#
+# {
+#   "recipientName": "Tunde Akinola",
+#   "phone": "+2348012345678",
+#   "address": "12 Admiralty Way, Lekki Phase 1",
+#   "city": "Lagos",
+#   "notes": "Call before delivery",
+#   "payMethod": "CARD",
+#   "items": [
+#     { "productId": "REPLACE_WITH_REAL_PRODUCT_ID", "quantity": 10 }
+#   ]
+# }
+
+### ═══ 12. List buyer's orders ═══
+GET {{baseUrl}}/orders
+Authorization: Bearer {{loginBuyer.response.body.accessToken}}

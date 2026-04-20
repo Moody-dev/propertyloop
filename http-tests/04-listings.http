@@ -1,0 +1,154 @@
+### ─── PropertyLoop Listings Endpoints ────────────────────────────────────────
+### Login as agent
+# @name loginAgent
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "{{agentEmail}}",
+  "password": "{{agentPassword}}"
+}
+
+### ═══ 1. Create listing (agent only) ═══
+# @name createListing
+POST {{baseUrl}}/listings
+Authorization: Bearer {{loginAgent.response.body.accessToken}}
+Content-Type: application/json
+
+{
+  "title": "Luxury 3-Bed Flat in Lekki Phase 1",
+  "type": "SALE",
+  "propertyType": "Flat / Apartment",
+  "priceNaira": 65000000,
+  "address": "12 Admiralty Way, Lekki Phase 1",
+  "location": "Lekki, Lagos",
+  "beds": 3,
+  "baths": 3,
+  "sqft": "2,400",
+  "yearBuilt": "2023",
+  "description": "A stunning 3-bedroom luxury flat located in the heart of Lekki Phase 1 with floor-to-ceiling windows, modern kitchen, marble flooring, and panoramic views.",
+  "features": ["24hr Power", "Swimming Pool", "Gym", "CCTV", "Elevator", "Parking (2 spots)"],
+  "coverImage": "https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=600",
+  "images": [
+    "https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=1200",
+    "https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?w=1200"
+  ],
+  "virtualTourUrl": "https://my.matterport.com/show/?m=abc123"
+}
+
+### ═══ 2. Create a rental listing ═══
+# @name createRentalListing
+POST {{baseUrl}}/listings
+Authorization: Bearer {{loginAgent.response.body.accessToken}}
+Content-Type: application/json
+
+{
+  "title": "Modern 2-Bed Apartment for Rent in Ikoyi",
+  "type": "RENT",
+  "propertyType": "Flat / Apartment",
+  "priceNaira": 3500000,
+  "period": "/year",
+  "address": "5 Bourdillon Road, Ikoyi",
+  "location": "Ikoyi, Lagos",
+  "beds": 2,
+  "baths": 2,
+  "sqft": "1,800",
+  "yearBuilt": "2024",
+  "description": "Newly built 2-bed apartment in prime Ikoyi with fitted kitchen and 24hr power.",
+  "features": ["24hr Power", "Fitted Kitchen", "CCTV", "Parking (1 spot)"],
+  "coverImage": "https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?w=600",
+  "images": ["https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?w=1200"]
+}
+
+### ═══ 3. Create a shortlet listing ═══
+# @name createShortletListing
+POST {{baseUrl}}/listings
+Authorization: Bearer {{loginAgent.response.body.accessToken}}
+Content-Type: application/json
+
+{
+  "title": "Cozy Shortlet Studio in Victoria Island",
+  "type": "SHORTLET",
+  "propertyType": "Studio",
+  "priceNaira": 35000,
+  "period": "/night",
+  "address": "10 Adeola Odeku, Victoria Island",
+  "location": "Victoria Island, Lagos",
+  "beds": 1,
+  "baths": 1,
+  "sqft": "650",
+  "yearBuilt": "2025",
+  "description": "Fully furnished shortlet studio in the heart of VI, perfect for business travellers.",
+  "features": ["WiFi", "Smart TV", "24hr Power", "Gym"],
+  "coverImage": "https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?w=600",
+  "images": ["https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?w=1200"]
+}
+
+### ═══ 4. List all public listings ═══
+GET {{baseUrl}}/listings?page=1&limit=10
+
+### ═══ 5. List with filters — sale only ═══
+GET {{baseUrl}}/listings?type=SALE&location=Lekki&minBeds=2&sort=newest
+
+### ═══ 6. List with filters — rent only ═══
+GET {{baseUrl}}/listings?type=RENT&sort=price_asc
+
+### ═══ 7. List agent's own listings ═══
+GET {{baseUrl}}/listings/me/all
+Authorization: Bearer {{loginAgent.response.body.accessToken}}
+
+### ═══ 8. Get listing by ID ═══
+GET {{baseUrl}}/listings/{{createListing.response.body.id}}
+
+### ═══ 9. Get listing by slug ═══
+GET {{baseUrl}}/listings/slug/{{createListing.response.body.slug}}
+
+### ═══ 10. Update listing ═══
+PATCH {{baseUrl}}/listings/{{createListing.response.body.id}}
+Authorization: Bearer {{loginAgent.response.body.accessToken}}
+Content-Type: application/json
+
+{
+  "priceNaira": 62000000,
+  "description": "PRICE REDUCED! A stunning 3-bedroom luxury flat in the heart of Lekki Phase 1.",
+  "status": "ACTIVE"
+}
+
+### ═══ 11. Add document to listing ═══
+# @name addDocument
+POST {{baseUrl}}/listings/{{createListing.response.body.id}}/documents
+Authorization: Bearer {{loginAgent.response.body.accessToken}}
+Content-Type: application/json
+
+{
+  "name": "Certificate of Occupancy",
+  "type": "C_OF_O",
+  "date": "Sep 2022"
+}
+
+### ═══ 12. Add another document ═══
+POST {{baseUrl}}/listings/{{createListing.response.body.id}}/documents
+Authorization: Bearer {{loginAgent.response.body.accessToken}}
+Content-Type: application/json
+
+{
+  "name": "Approved Survey Plan",
+  "type": "SURVEY_PLAN",
+  "date": "Aug 2022"
+}
+
+### ═══ 13. Verify listing has documents ═══
+GET {{baseUrl}}/listings/{{createListing.response.body.id}}
+
+### ═══ 14. Delete a document ═══
+DELETE {{baseUrl}}/listings/{{createListing.response.body.id}}/documents/{{addDocument.response.body.id}}
+Authorization: Bearer {{loginAgent.response.body.accessToken}}
+
+### ═══ 15. Mark listing as SOLD ═══
+PATCH {{baseUrl}}/listings/{{createListing.response.body.id}}
+Authorization: Bearer {{loginAgent.response.body.accessToken}}
+Content-Type: application/json
+
+{
+  "status": "SOLD"
+}

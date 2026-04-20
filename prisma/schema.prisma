@@ -43,6 +43,7 @@ enum Role {
   BUYER
   AGENT
   VENDOR
+  ADMIN
 }
 
 enum ListingType {
@@ -179,10 +180,11 @@ model User {
   deletedAt DateTime? // soft delete from Settings → Privacy → Delete account
 
   // Role-specific 1:1
-  buyerProfile  BuyerProfile?
-  agentProfile  AgentProfile?
-  vendorProfile VendorProfile?
-  settings      UserSettings?
+  buyerProfile      BuyerProfile?
+  agentProfile      AgentProfile?
+  vendorProfile     VendorProfile?
+  vendorBankAccount VendorBankAccount? @relation("VendorBankAccount")
+  settings          UserSettings?
 
   // Auth-token relations
   sessions                Session[]
@@ -264,6 +266,7 @@ model VendorProfile {
   // Directory fields (Vendor interface in src/data/vendors.ts)
   priceLabel String? // "From ₦15,000"
   priceNum   Int? // 15000
+  website    String? // Vendor's website/portfolio URL
 
   // Media
   bannerImage      String? // Hero image for directory card
@@ -274,6 +277,21 @@ model VendorProfile {
   rating    Float    @default(0)
   jobsCount Int      @default(0)
   verified  Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model VendorBankAccount {
+  id                    String @id @default(cuid())
+  vendorUserId          String @unique
+  vendor                User   @relation("VendorBankAccount", fields: [vendorUserId], references: [id], onDelete: Cascade)
+
+  accountName           String
+  accountNumber         String
+  bankCode              String
+  bankName              String
+  paystackRecipientCode String
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -409,6 +427,7 @@ model Listing {
   viewsCount   Int           @default(0)
   // Video tour fields (matches data/videos.ts VideoListing interface)
   virtualTourUrl String? // YouTube embed URL
+  videoUrl       String? // Property video URL (upload or external)
   videoThumbnail String? // Thumbnail image for video card
   videoDuration  String? // e.g. "2:34"
   videoViewCount Int     @default(0)
@@ -585,7 +604,7 @@ model OrderItem {
 model VendorJob {
   id           String @id @default(cuid())
   vendorUserId String
-  vendor       User   @relation("VendorJobs", fields: [vendorUserId], references: [id], onDelete: Cascade)
+  vendor       User   @relation("VendorJobs", fields: [vendorUserId], references: [id], onDelete: Restrict)
 
   // Buyer who booked the job (null for guest bookings)
   buyerUserId String?
@@ -624,6 +643,10 @@ model VendorJob {
   disputedAt            DateTime?
   refundedAt            DateTime?
 
+  // Paystack integration
+  escrowPaidAt  DateTime? // when webhook confirms charge.success
+  transferCode  String?   // Paystack transfer code after release
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -635,6 +658,7 @@ model VendorJob {
   @@index([buyerUserId])
   @@index([status])
   @@index([escrowStatus])
+  @@index([transferCode])
 }
 
 model VendorEarning {

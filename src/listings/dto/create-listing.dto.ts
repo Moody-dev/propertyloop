@@ -89,4 +89,8 @@ export class CreateListingDto {
   @IsUrl()
   @IsOptional()
   virtualTourUrl?: string;
+
+  @IsUrl()
+  @IsOptional()
+  videoUrl?: string;
 }

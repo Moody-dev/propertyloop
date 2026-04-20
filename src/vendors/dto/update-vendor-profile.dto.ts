@@ -5,6 +5,7 @@ import {
   IsInt,
   IsOptional,
   IsString,
+  IsUrl,
   MaxLength,
   Min,
 } from 'class-validator';
@@ -23,6 +24,7 @@ export class UpdateVendorProfileDto {
   @IsString() @IsOptional() @MaxLength(200) serviceArea?: string;
   @IsString() @IsOptional() @MaxLength(60) priceLabel?: string;
   @IsInt() @Min(0) @IsOptional() priceNum?: number;
+  @IsUrl() @IsOptional() website?: string;
   @IsString() @IsOptional() bannerImage?: string;
   @IsArray() @IsString({ each: true }) @ArrayMaxSize(20) @IsOptional()
   portfolioImages?: string[];

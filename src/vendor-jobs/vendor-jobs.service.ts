@@ -4,8 +4,8 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import * as crypto from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
+import { PaymentsService } from '../payments/payments.service';
 import {
   EarningStatus,
   EscrowStatus,
@@ -20,7 +20,10 @@ import { DisputeJobDto } from './dto/dispute-job.dto';
 
 @Injectable()
 export class VendorJobsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly paymentsService: PaymentsService,
+  ) {}
 
   // ─── Booking creation (buyer → vendor) ───────────────────────────────────
 
@@ -44,7 +47,6 @@ export class VendorJobsService {
     const vendorFee = Math.max(0, Math.floor(dto.vendorFee));
     const platformFee = Math.round(vendorFee * 0.1);
     const escrowAmount = vendorFee + platformFee;
-    const escrowId = `ESC-${Date.now()}-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
 
     const job = await this.prisma.vendorJob.create({
       data: {
@@ -61,8 +63,7 @@ export class VendorJobsService {
         vendorFee,
         platformFee,
         escrowAmount,
-        escrowId,
-        escrowStatus: EscrowStatus.LOCKED,
+        escrowStatus: EscrowStatus.NONE, // Payment not yet initiated
         paymentMethod: dto.paymentMethod,
         scheduledFor: dto.scheduledFor,
         status: JobStatus.PENDING,
@@ -207,36 +208,17 @@ export class VendorJobsService {
       throw new BadRequestException('Only completed jobs can be confirmed');
     }
     if (job.escrowStatus !== EscrowStatus.LOCKED) {
-      throw new BadRequestException('Escrow is not currently locked for this job');
+      throw new BadRequestException('Escrow must be locked (payment confirmed) before confirming');
     }
 
-    const [updated] = await this.prisma.$transaction([
-      this.prisma.vendorJob.update({
-        where: { id: jobId },
-        data: {
-          status: JobStatus.PAID,
-          escrowStatus: EscrowStatus.RELEASED,
-          confirmedAt: new Date(),
-        },
-      }),
-      this.prisma.vendorEarning.create({
-        data: {
-          vendorUserId: job.vendorUserId,
-          jobId: job.id,
-          jobTitle: job.title,
-          clientName: job.clientName,
-          amount: job.vendorFee,
-          status: EarningStatus.PAID,
-          paidAt: new Date(),
-        },
-      }),
-      this.prisma.vendorProfile.update({
-        where: { userId: job.vendorUserId },
-        data: { jobsCount: { increment: 1 } },
-      }),
-    ]);
+    // Call payments service to release escrow and initiate transfer
+    await this.paymentsService.releaseEscrow(jobId, buyerUserId);
 
-    return updated;
+    // Fetch and return the updated job
+    return this.prisma.vendorJob.findUnique({
+      where: { id: jobId },
+      include: { vendor: { include: { vendorProfile: true } } },
+    });
   }
 
   async dispute(buyerUserId: string, jobId: string, dto: DisputeJobDto) {

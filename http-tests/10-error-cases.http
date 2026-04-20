@@ -1,0 +1,169 @@
+### ─── PropertyLoop Error & Edge Cases ────────────────────────────────────────
+### Login tokens
+# @name loginBuyer
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "{{buyerEmail}}",
+  "password": "{{buyerPassword}}"
+}
+
+# @name loginAgent
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "{{agentEmail}}",
+  "password": "{{agentPassword}}"
+}
+
+# @name loginVendor
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "{{vendorEmail}}",
+  "password": "{{vendorPassword}}"
+}
+### ═══════════════════════════════════════════════════════════════════════════
+### AUTH ERRORS
+### ═══════════════════════════════════════════════════════════════════════════
+
+### ═══ 1. No token (expect 401) ═══
+GET {{baseUrl}}/auth/me
+
+### ═══ 2. Invalid token (expect 401) ═══
+GET {{baseUrl}}/auth/me
+Authorization: Bearer totally.fake.token
+
+### ═══ 3. Missing required fields (expect 400) ═══
+POST {{baseUrl}}/auth/signup
+Content-Type: application/json
+
+{
+  "name": "No Email"
+}
+
+### ═══ 4. Agent signup without agent data (expect 400) ═══
+POST {{baseUrl}}/auth/signup
+Content-Type: application/json
+
+{
+  "name": "Bad Agent",
+  "email": "bad.agent@test.com",
+  "password": "{{buyerPassword}}",
+  "role": "AGENT"
+}
+### ═══════════════════════════════════════════════════════════════════════════
+### ROLE ENFORCEMENT
+### ═══════════════════════════════════════════════════════════════════════════
+
+### ═══ 5. Buyer tries agent endpoint (expect 403) ═══
+GET {{baseUrl}}/agents/me
+Authorization: Bearer {{loginBuyer.response.body.accessToken}}
+
+### ═══ 6. Buyer tries vendor endpoint (expect 403) ═══
+GET {{baseUrl}}/vendors/me
+Authorization: Bearer {{loginBuyer.response.body.accessToken}}
+
+### ═══ 7. Agent tries vendor jobs (expect 403) ═══
+GET {{baseUrl}}/vendor-jobs
+Authorization: Bearer {{loginAgent.response.body.accessToken}}
+
+### ═══ 8. Vendor tries to create listing (expect 403) ═══
+POST {{baseUrl}}/listings
+Authorization: Bearer {{loginVendor.response.body.accessToken}}
+Content-Type: application/json
+
+{
+  "title": "Test",
+  "type": "SALE",
+  "propertyType": "House",
+  "priceNaira": 100000000,
+  "address": "Somewhere",
+  "location": "Lagos",
+  "beds": 3,
+  "baths": 2,
+  "sqft": "2000",
+  "yearBuilt": "2024",
+  "description": "Test",
+  "features": [],
+  "coverImage": "https://example.com/img.jpg",
+  "images": []
+}
+
+### ═══ 9. Vendor tries to create lead (expect 403) ═══
+GET {{baseUrl}}/leads
+Authorization: Bearer {{loginVendor.response.body.accessToken}}
+### ═══════════════════════════════════════════════════════════════════════════
+### OWNERSHIP ENFORCEMENT
+### ═══════════════════════════════════════════════════════════════════════════
+
+### ═══ 10. Buyer tries to update agent's listing (expect 403) ═══
+# Get a listing ID first
+# @name someListings
+GET {{baseUrl}}/listings?limit=1
+
+###
+PATCH {{baseUrl}}/listings/{{someListings.response.body.items[0].id}}
+Authorization: Bearer {{loginBuyer.response.body.accessToken}}
+Content-Type: application/json
+
+{
+  "priceNaira": 1
+}
+### ═══════════════════════════════════════════════════════════════════════════
+### NOT FOUND
+### ═══════════════════════════════════════════════════════════════════════════
+
+### ═══ 11. Listing not found (expect 404) ═══
+GET {{baseUrl}}/listings/nonexistent-id-12345
+
+### ═══ 12. Agent not found (expect 404) ═══
+GET {{baseUrl}}/agents/nonexistent-id-12345
+
+### ═══ 13. Vendor not found (expect 404) ═══
+GET {{baseUrl}}/vendors/nonexistent-id-12345
+### ═══════════════════════════════════════════════════════════════════════════
+### STATE MACHINE VIOLATIONS
+### ═══════════════════════════════════════════════════════════════════════════
+
+### ═══ 14. Try to start a PENDING job (should fail — must accept first) ═══
+# Create a job first
+# @name badStateJob
+POST {{baseUrl}}/vendor-jobs
+Authorization: Bearer {{loginBuyer.response.body.accessToken}}
+Content-Type: application/json
+
+{
+  "vendorId": "{{loginVendor.response.body.user.id}}",
+  "title": "State machine test",
+  "description": "Testing invalid state transition",
+  "address": "Test address",
+  "vendorFee": 10000,
+  "scheduledFor": "2026-05-01T10:00:00.000Z",
+  "clientName": "Tester",
+  "clientPhone": "+2340000000000"
+}
+
+### Expect 400 — can't start a PENDING job
+PATCH {{baseUrl}}/vendor-jobs/{{badStateJob.response.body.id}}/start
+Authorization: Bearer {{loginVendor.response.body.accessToken}}
+
+### Expect 400 — can't complete a PENDING job
+PATCH {{baseUrl}}/vendor-jobs/{{badStateJob.response.body.id}}/complete
+Authorization: Bearer {{loginVendor.response.body.accessToken}}
+Content-Type: application/json
+
+{
+  "completionNotes": "Tried to skip"
+}
+
+### Expect 400 — buyer can't confirm a PENDING job
+POST {{baseUrl}}/vendor-jobs/{{badStateJob.response.body.id}}/confirm
+Authorization: Bearer {{loginBuyer.response.body.accessToken}}
+
+### Cleanup — decline it
+PATCH {{baseUrl}}/vendor-jobs/{{badStateJob.response.body.id}}/decline
+Authorization: Bearer {{loginVendor.response.body.accessToken}}

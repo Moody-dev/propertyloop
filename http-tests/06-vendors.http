@@ -1,0 +1,72 @@
+### ─── PropertyLoop Vendors Endpoints ─────────────────────────────────────────
+### Login as vendor
+# @name loginVendor
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "{{vendorEmail}}",
+  "password": "{{vendorPassword}}"
+}
+
+### Login as buyer (for reviews)
+# @name loginBuyer
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "{{buyerEmail}}",
+  "password": "{{buyerPassword}}"
+}
+
+### ═══ 1. List vendors (public) ═══
+GET {{baseUrl}}/vendors?page=1&limit=10
+
+### ═══ 2. List vendors with filters ═══
+GET {{baseUrl}}/vendors?category=Plumbing&location=Lekki&sort=top_rated
+
+### ═══ 3. Get own vendor profile ═══
+GET {{baseUrl}}/vendors/me
+Authorization: Bearer {{loginVendor.response.body.accessToken}}
+
+### ═══ 4. Update vendor profile ═══
+PATCH {{baseUrl}}/vendors/me
+Authorization: Bearer {{loginVendor.response.body.accessToken}}
+Content-Type: application/json
+
+{
+  "name": "Emeka Okonkwo",
+  "bio": "Expert plumber with 8 years experience across Lekki and Victoria Island. Specialises in kitchen and bathroom installations.",
+  "priceLabel": "From ₦15,000",
+  "priceNum": 15000,
+  "serviceArea": "Lekki, Ajah, Victoria Island, Ikoyi",
+  "portfolioImages": [
+    "https://images.unsplash.com/photo-1621905251189-08b45d6a269e?w=600",
+    "https://images.unsplash.com/photo-1585704032915-c3400ca199e7?w=600"
+  ],
+  "availableForHire": true
+}
+
+### ═══ 5. Get vendor dashboard stats ═══
+GET {{baseUrl}}/vendors/me/stats
+Authorization: Bearer {{loginVendor.response.body.accessToken}}
+
+### ═══ 6. Get public vendor profile ═══
+GET {{baseUrl}}/vendors/{{loginVendor.response.body.user.id}}
+
+### ═══ 7. List vendor reviews ═══
+GET {{baseUrl}}/vendors/{{loginVendor.response.body.user.id}}/reviews
+
+### ═══ 8. Create vendor review (as buyer) ═══
+POST {{baseUrl}}/vendors/{{loginVendor.response.body.user.id}}/reviews
+Authorization: Bearer {{loginBuyer.response.body.accessToken}}
+Content-Type: application/json
+
+{
+  "rating": 5,
+  "comment": "Emeka fixed our kitchen sink perfectly. Professional, on time, and fair price. Will use again!",
+  "jobTitle": "Kitchen Sink Repair"
+}
+
+### ═══ 9. Verify review and updated rating ═══
+GET {{baseUrl}}/vendors/{{loginVendor.response.body.user.id}}

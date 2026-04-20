@@ -1,0 +1,70 @@
+### ─── PropertyLoop Agents Endpoints ─────────────────────────────────────────
+### Login as agent
+# @name loginAgent
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "{{agentEmail}}",
+  "password": "{{agentPassword}}"
+}
+
+### Login as buyer (for reviews)
+# @name loginBuyer
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "{{buyerEmail}}",
+  "password": "{{buyerPassword}}"
+}
+
+### ═══ 1. List agents (public) ═══
+GET {{baseUrl}}/agents?page=1&limit=10
+
+### ═══ 2. List agents with filters ═══
+GET {{baseUrl}}/agents?search=chioma&sort=top_rated&limit=10
+
+### ═══ 3. Get own profile (agent) ═══
+GET {{baseUrl}}/agents/me
+Authorization: Bearer {{loginAgent.response.body.accessToken}}
+
+### ═══ 4. Update own agent profile ═══
+PATCH {{baseUrl}}/agents/me
+Authorization: Bearer {{loginAgent.response.body.accessToken}}
+Content-Type: application/json
+
+{
+  "name": "Chioma Okafor",
+  "bio": "Specialist in luxury Lekki and VI properties with 10+ years experience",
+  "yearsExperience": 10,
+  "specialty": ["Buy", "Rent", "Shortlet"],
+  "website": "https://primerealtylagos.com"
+}
+
+### ═══ 5. Get agent dashboard stats ═══
+GET {{baseUrl}}/agents/me/stats
+Authorization: Bearer {{loginAgent.response.body.accessToken}}
+
+### ═══ 6. Get public agent profile ═══
+GET {{baseUrl}}/agents/{{loginAgent.response.body.user.id}}
+
+### ═══ 7. List agent reviews ═══
+GET {{baseUrl}}/agents/{{loginAgent.response.body.user.id}}/reviews
+
+### ═══ 8. Create agent review (as buyer) ═══
+POST {{baseUrl}}/agents/{{loginAgent.response.body.user.id}}/reviews
+Authorization: Bearer {{loginBuyer.response.body.accessToken}}
+Content-Type: application/json
+
+{
+  "rating": 5,
+  "comment": "Chioma was incredibly helpful and transparent throughout the entire process. Highly recommended!"
+}
+
+### ═══ 9. Verify review appears ═══
+GET {{baseUrl}}/agents/{{loginAgent.response.body.user.id}}/reviews
+
+### ═══ 10. Buyer trying to access agent endpoint (expect 403) ═══
+GET {{baseUrl}}/agents/me
+Authorization: Bearer {{loginBuyer.response.body.accessToken}}

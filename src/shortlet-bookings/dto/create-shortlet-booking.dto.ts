@@ -2,6 +2,7 @@ import { Type } from 'class-transformer';
 import {
   IsDate,
   IsEmail,
+  IsIn,
   IsInt,
   IsNotEmpty,
   IsOptional,
@@ -21,5 +22,5 @@ export class CreateShortletBookingDto {
   @Type(() => Date) @IsDate() checkIn: Date;
   @Type(() => Date) @IsDate() checkOut: Date;
 
-  @IsString() @IsOptional() @MaxLength(20) paymentMethod?: string;
+  @IsOptional() @IsIn(['CARD', 'TRANSFER', 'WALLET']) paymentMethod?: string;
 }

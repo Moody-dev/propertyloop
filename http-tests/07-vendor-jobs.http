@@ -1,0 +1,168 @@
+### ─── PropertyLoop Vendor Jobs (Booking + Escrow) ───────────────────────────
+### Login as buyer
+# @name loginBuyer
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "{{buyerEmail}}",
+  "password": "{{buyerPassword}}"
+}
+
+### Login as vendor
+# @name loginVendor
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "{{vendorEmail}}",
+  "password": "{{vendorPassword}}"
+}
+### ═══════════════════════════════════════════════════════════════════════════
+### BOOKING FLOW (Buyer creates → Vendor accepts → works → completes → Buyer confirms)
+### ═══════════════════════════════════════════════════════════════════════════
+
+### ═══ 1. Buyer books a vendor service ═══
+# @name createBooking
+POST {{baseUrl}}/vendor-jobs
+Authorization: Bearer {{loginBuyer.response.body.accessToken}}
+Content-Type: application/json
+
+{
+  "vendorId": "{{loginVendor.response.body.user.id}}",
+  "title": "Kitchen Sink Replacement",
+  "description": "Replace kitchen sink and fix the drainage pipe underneath. Current sink is cracked.",
+  "address": "12 Admiralty Way, Lekki Phase 1",
+  "category": "Plumbing",
+  "vendorFee": 45000,
+  "scheduledFor": "2026-04-19T10:00:00.000Z",
+  "clientName": "Tunde Akinola",
+  "clientPhone": "+2348012345678",
+  "clientEmail": "tunde.buyer@test.com",
+  "paymentMethod": "card"
+}
+
+### ═══ 2. Verify escrow was set up correctly ═══
+### Should show: escrowStatus=LOCKED, vendorFee=45000, platformFee=4500, escrowAmount=49500
+GET {{baseUrl}}/vendor-jobs/{{createBooking.response.body.id}}
+Authorization: Bearer {{loginBuyer.response.body.accessToken}}
+
+### ═══ 3. Vendor lists pending jobs ═══
+GET {{baseUrl}}/vendor-jobs?status=PENDING
+Authorization: Bearer {{loginVendor.response.body.accessToken}}
+
+### ═══ 4. Vendor accepts the job ═══
+PATCH {{baseUrl}}/vendor-jobs/{{createBooking.response.body.id}}/accept
+Authorization: Bearer {{loginVendor.response.body.accessToken}}
+
+### ═══ 5. Vendor starts work ═══
+PATCH {{baseUrl}}/vendor-jobs/{{createBooking.response.body.id}}/start
+Authorization: Bearer {{loginVendor.response.body.accessToken}}
+
+### ═══ 6. Vendor marks complete with proof ═══
+PATCH {{baseUrl}}/vendor-jobs/{{createBooking.response.body.id}}/complete
+Authorization: Bearer {{loginVendor.response.body.accessToken}}
+Content-Type: application/json
+
+{
+  "completionNotes": "Replaced kitchen sink with stainless steel model. Fixed drainage pipe. All tested and working.",
+  "completionProofImages": [
+    "https://images.unsplash.com/photo-1585704032915-c3400ca199e7?w=600",
+    "https://images.unsplash.com/photo-1584622781564-1d987f7333c1?w=600"
+  ]
+}
+
+### ═══ 7. Buyer confirms completion → releases escrow ═══
+### This should: status=PAID, escrowStatus=RELEASED, create VendorEarning, increment jobsCount
+POST {{baseUrl}}/vendor-jobs/{{createBooking.response.body.id}}/confirm
+Authorization: Bearer {{loginBuyer.response.body.accessToken}}
+
+### ═══ 8. Buyer lists their bookings ═══
+GET {{baseUrl}}/vendor-jobs/mine
+Authorization: Bearer {{loginBuyer.response.body.accessToken}}
+
+### ═══ 9. Check vendor earnings ═══
+GET {{baseUrl}}/vendor-earnings
+Authorization: Bearer {{loginVendor.response.body.accessToken}}
+
+### ═══ 10. Check vendor earnings summary ═══
+GET {{baseUrl}}/vendor-earnings/summary
+Authorization: Bearer {{loginVendor.response.body.accessToken}}
+### ═══════════════════════════════════════════════════════════════════════════
+### DISPUTE FLOW (separate booking)
+### ═══════════════════════════════════════════════════════════════════════════
+
+### ═══ 11. Create another booking ═══
+# @name disputeBooking
+POST {{baseUrl}}/vendor-jobs
+Authorization: Bearer {{loginBuyer.response.body.accessToken}}
+Content-Type: application/json
+
+{
+  "vendorId": "{{loginVendor.response.body.user.id}}",
+  "title": "Bathroom Pipe Repair",
+  "description": "Leaking pipe in the bathroom ceiling",
+  "address": "12 Admiralty Way, Lekki Phase 1",
+  "vendorFee": 25000,
+  "scheduledFor": "2026-04-20T14:00:00.000Z",
+  "clientName": "Tunde Akinola",
+  "clientPhone": "+2348012345678"
+}
+
+### ═══ 12. Fast-track to COMPLETED ═══
+PATCH {{baseUrl}}/vendor-jobs/{{disputeBooking.response.body.id}}/accept
+Authorization: Bearer {{loginVendor.response.body.accessToken}}
+
+###
+PATCH {{baseUrl}}/vendor-jobs/{{disputeBooking.response.body.id}}/start
+Authorization: Bearer {{loginVendor.response.body.accessToken}}
+
+###
+PATCH {{baseUrl}}/vendor-jobs/{{disputeBooking.response.body.id}}/complete
+Authorization: Bearer {{loginVendor.response.body.accessToken}}
+Content-Type: application/json
+
+{
+  "completionNotes": "Pipe repaired"
+}
+
+### ═══ 13. Buyer disputes instead of confirming ═══
+POST {{baseUrl}}/vendor-jobs/{{disputeBooking.response.body.id}}/dispute
+Authorization: Bearer {{loginBuyer.response.body.accessToken}}
+Content-Type: application/json
+
+{
+  "disputeReason": "The pipe is still leaking after the repair. Water dripping from the ceiling into the bathroom. Not fixed properly."
+}
+
+### ═══ 14. Verify: escrowStatus=DISPUTED, no new earning ═══
+GET {{baseUrl}}/vendor-jobs/{{disputeBooking.response.body.id}}
+Authorization: Bearer {{loginVendor.response.body.accessToken}}
+### ═══════════════════════════════════════════════════════════════════════════
+### DECLINE FLOW
+### ═══════════════════════════════════════════════════════════════════════════
+
+### ═══ 15. Create a booking to decline ═══
+# @name declineBooking
+POST {{baseUrl}}/vendor-jobs
+Authorization: Bearer {{loginBuyer.response.body.accessToken}}
+Content-Type: application/json
+
+{
+  "vendorId": "{{loginVendor.response.body.user.id}}",
+  "title": "Water Heater Installation",
+  "description": "Install a new water heater in the guest bathroom",
+  "address": "5 Bourdillon Road, Ikoyi",
+  "vendorFee": 75000,
+  "scheduledFor": "2026-04-25T09:00:00.000Z",
+  "clientName": "Tunde Akinola",
+  "clientPhone": "+2348012345678"
+}
+
+### ═══ 16. Vendor declines (deletes the job) ═══
+PATCH {{baseUrl}}/vendor-jobs/{{declineBooking.response.body.id}}/decline
+Authorization: Bearer {{loginVendor.response.body.accessToken}}
+
+### ═══ 17. Verify job is gone (expect 404) ═══
+GET {{baseUrl}}/vendor-jobs/{{declineBooking.response.body.id}}
+Authorization: Bearer {{loginVendor.response.body.accessToken}}

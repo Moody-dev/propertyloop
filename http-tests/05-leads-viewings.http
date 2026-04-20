@@ -1,0 +1,135 @@
+### ─── PropertyLoop Leads & Viewings Endpoints ──────────────────────────────
+
+
+### Login as agent
+# @name loginAgent
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "{{agentEmail}}",
+  "password": "{{agentPassword}}"
+}
+
+### Login as buyer
+# @name loginBuyer
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "{{buyerEmail}}",
+  "password": "{{buyerPassword}}"
+}
+
+### Get the agent's first listing for lead/viewing creation
+# @name agentListings
+GET {{baseUrl}}/listings/me/all
+Authorization: Bearer {{loginAgent.response.body.accessToken}}
+
+
+### ═══════════════════════════════════════════════════════════════════════════
+### LEADS
+### ═══════════════════════════════════════════════════════════════════════════
+
+### ═══ 1. Create lead (buyer submits enquiry on a property) ═══
+# @name createLead
+POST {{baseUrl}}/leads
+Authorization: Bearer {{loginBuyer.response.body.accessToken}}
+Content-Type: application/json
+
+{
+  "listingId": "{{agentListings.response.body.items[0].id}}",
+  "name": "Tunde Akinola",
+  "email": "{{buyerEmail}}",
+  "phone": "+2348012345678",
+  "message": "I'm very interested in this property. Is it still available? Can we schedule a viewing?"
+}
+
+### ═══ 2. Create lead as guest (no auth) ═══
+POST {{baseUrl}}/leads
+Content-Type: application/json
+
+{
+  "listingId": "{{agentListings.response.body.items[0].id}}",
+  "name": "Guest Buyer",
+  "phone": "+2348099999999",
+  "message": "Price negotiable?"
+}
+
+### ═══ 3. Agent lists their leads ═══
+GET {{baseUrl}}/leads
+Authorization: Bearer {{loginAgent.response.body.accessToken}}
+
+### ═══ 4. Agent lists leads filtered by status ═══
+GET {{baseUrl}}/leads?status=NEW
+Authorization: Bearer {{loginAgent.response.body.accessToken}}
+
+### ═══ 5. Agent gets single lead ═══
+GET {{baseUrl}}/leads/{{createLead.response.body.id}}
+Authorization: Bearer {{loginAgent.response.body.accessToken}}
+
+### ═══ 6. Agent updates lead status ═══
+PATCH {{baseUrl}}/leads/{{createLead.response.body.id}}
+Authorization: Bearer {{loginAgent.response.body.accessToken}}
+Content-Type: application/json
+
+{
+  "status": "CONTACTED",
+  "notes": "Called the buyer, scheduled a viewing for Saturday"
+}
+
+### ═══ 7. Agent marks lead as converted ═══
+PATCH {{baseUrl}}/leads/{{createLead.response.body.id}}
+Authorization: Bearer {{loginAgent.response.body.accessToken}}
+Content-Type: application/json
+
+{
+  "status": "CONVERTED"
+}
+
+
+### ═══════════════════════════════════════════════════════════════════════════
+### VIEWINGS
+### ═══════════════════════════════════════════════════════════════════════════
+
+### ═══ 8. Schedule a viewing (buyer requests) ═══
+# @name createViewing
+POST {{baseUrl}}/viewings
+Authorization: Bearer {{loginBuyer.response.body.accessToken}}
+Content-Type: application/json
+
+{
+  "listingId": "{{agentListings.response.body.items[0].id}}",
+  "clientName": "Tunde Akinola",
+  "clientPhone": "+2348012345678",
+  "clientEmail": "tunde.buyer@test.com",
+  "scheduledFor": "2026-04-19T15:00:00.000Z",
+  "notes": "Saturday afternoon works best for me"
+}
+
+### ═══ 9. Agent lists upcoming viewings ═══
+GET {{baseUrl}}/viewings?upcoming=true
+Authorization: Bearer {{loginAgent.response.body.accessToken}}
+
+### ═══ 10. Agent confirms viewing ═══
+PATCH {{baseUrl}}/viewings/{{createViewing.response.body.id}}
+Authorization: Bearer {{loginAgent.response.body.accessToken}}
+Content-Type: application/json
+
+{
+  "status": "CONFIRMED",
+  "notes": "Confirmed for 3pm Saturday. I'll meet you at the gate."
+}
+
+### ═══ 11. Agent marks viewing completed ═══
+PATCH {{baseUrl}}/viewings/{{createViewing.response.body.id}}
+Authorization: Bearer {{loginAgent.response.body.accessToken}}
+Content-Type: application/json
+
+{
+  "status": "COMPLETED"
+}
+
+### ═══ 12. Cancel a viewing ═══
+POST {{baseUrl}}/viewings/{{createViewing.response.body.id}}/cancel
+Authorization: Bearer {{loginAgent.response.body.accessToken}}

@@ -8,8 +8,12 @@ import {
   Post,
   Query,
   UseGuards,
+  UseInterceptors,
+  UploadedFile,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { ListingsService } from './listings.service';
+import { B2Service } from '../storage/b2.service';
 import { CreateListingDto } from './dto/create-listing.dto';
 import { UpdateListingDto } from './dto/update-listing.dto';
 import { ListListingsDto } from './dto/list-listings.dto';
@@ -25,7 +29,10 @@ import { Role } from '../../generated/prisma/client';
 
 @Controller('listings')
 export class ListingsController {
-  constructor(private readonly listingsService: ListingsService) {}
+  constructor(
+    private readonly listingsService: ListingsService,
+    private readonly b2Service: B2Service,
+  ) {}
 
   // ─── Public ──────────────────────────────────────────────────────────────
 
@@ -54,6 +61,22 @@ export class ListingsController {
     @Body() dto: CreateListingDto,
   ) {
     return this.listingsService.create(user.id, dto);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.AGENT)
+  @Post('upload/photo')
+  @UseInterceptors(FileInterceptor('file'))
+  async uploadPhoto(@UploadedFile() file: any) {
+    return this.b2Service.uploadFile(file, 'listings');
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.AGENT)
+  @Post('upload/video')
+  @UseInterceptors(FileInterceptor('file'))
+  async uploadVideo(@UploadedFile() file: any) {
+    return this.b2Service.uploadFile(file, 'listings-videos');
   }
 
   @Get('slug/:slug')
