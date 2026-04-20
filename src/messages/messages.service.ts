@@ -211,6 +211,15 @@ export class MessagesService {
           ],
         },
       },
+      include: {
+        participants: {
+          include: {
+            user: {
+              select: { id: true, name: true, avatarUrl: true, phone: true, role: true },
+            },
+          },
+        },
+      },
     });
 
     // Send the first message if provided
