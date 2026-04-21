@@ -429,6 +429,24 @@ export class AuthService {
   // EMAIL VERIFICATION
   // ─────────────────────────────────────────────────────────────────────────
 
+  async resendVerificationEmail(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, email: true, name: true, emailVerifiedAt: true },
+    });
+    if (!user) throw new NotFoundException('User not found');
+    if (user.emailVerifiedAt) {
+      throw new BadRequestException('Email already verified');
+    }
+
+    await this.prisma.emailVerificationToken.deleteMany({
+      where: { userId, usedAt: null },
+    });
+
+    await this.sendEmailVerification(user.id, user.email, user.name);
+    return { success: true };
+  }
+
   private async sendEmailVerification(
     userId: string,
     email: string,

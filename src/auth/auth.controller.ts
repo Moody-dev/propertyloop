@@ -115,6 +115,13 @@ export class AuthController {
     return this.authService.verifyEmail(body.token);
   }
 
+  @UseGuards(JwtAuthGuard)
+  @Post('resend-verification')
+  @HttpCode(HttpStatus.OK)
+  resendVerification(@CurrentUser() user: CurrentUserData) {
+    return this.authService.resendVerificationEmail(user.id);
+  }
+
   // ─── Sessions / active devices ────────────────────────────────────────────
 
   @UseGuards(JwtAuthGuard)
