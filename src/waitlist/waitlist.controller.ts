@@ -37,8 +37,6 @@ export class WaitlistController {
     return this.waitlistService.findAll();
   }
 
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(Role.AGENT)
   @Get('export')
   async export(@Response() res: ExpressResponse) {
     const csv = await this.waitlistService.export();

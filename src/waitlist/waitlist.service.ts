@@ -300,10 +300,11 @@ export class WaitlistService {
     });
 
     if (entries.length === 0) {
-      return 'First Name,Last Name,Email,Phone,Company Name,Location,Type,Created At\n';
+      return 'ID,First Name,Last Name,Email,Phone,Company Name,Location,Type,Created At\n';
     }
 
     const headers = [
+      'ID',
       'First Name',
       'Last Name',
       'Email',
@@ -315,6 +316,7 @@ export class WaitlistService {
     ];
 
     const rows = entries.map((entry) => [
+      this.escapeCsvField(entry.id),
       this.escapeCsvField(entry.first_name),
       this.escapeCsvField(entry.last_name),
       this.escapeCsvField(entry.email),
