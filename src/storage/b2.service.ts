@@ -57,10 +57,15 @@ export class B2Service implements OnModuleInit {
       throw new BadRequestException('File storage service is not available. Please configure R2 credentials.');
     }
 
-    // Validate file size (max 50MB)
-    const maxSize = 50 * 1024 * 1024;
+    // Per-route FileInterceptor enforces tighter caps (5MB profile pic,
+    // 10MB photo/doc, 50MB video). Keep a generous global ceiling here as
+    // a defence-in-depth check.
+    const maxSize = 100 * 1024 * 1024;
     if (file.size > maxSize) {
-      throw new BadRequestException('File size exceeds 50MB limit');
+      const sizeMb = (file.size / 1024 / 1024).toFixed(1);
+      throw new BadRequestException(
+        `File size ${sizeMb}MB exceeds the 100MB ceiling`,
+      );
     }
 
     // Generate unique filename
