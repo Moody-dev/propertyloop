@@ -289,6 +289,7 @@ export class ListingsService {
         listingId,
         name: dto.name,
         type: dto.type,
+        url: dto.url,
         date: dto.date ?? new Date().toLocaleDateString('en-NG', { month: 'short', year: 'numeric' }),
       },
     });

@@ -1,4 +1,4 @@
-import { IsEnum, IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsEnum, IsNotEmpty, IsOptional, IsString, IsUrl, MaxLength } from 'class-validator';
 import { DocumentType } from '../../../generated/prisma/client';
 
 export class AddListingDocumentDto {
@@ -9,6 +9,10 @@ export class AddListingDocumentDto {
 
   @IsEnum(DocumentType)
   type: DocumentType;
+
+  @IsUrl()
+  @IsOptional()
+  url?: string;
 
   @IsString()
   @IsOptional()

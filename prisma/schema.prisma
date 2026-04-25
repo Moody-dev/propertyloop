@@ -456,6 +456,7 @@ model ListingDocument {
   listing   Listing      @relation(fields: [listingId], references: [id], onDelete: Cascade)
   name      String // "Certificate of Occupancy"
   type      DocumentType
+  url       String? // Public URL of the uploaded file in R2
   verified  Boolean      @default(false)
   date      String // matches frontend's free-text "Sep 2022"
   createdAt DateTime     @default(now())

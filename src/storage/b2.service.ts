@@ -12,6 +12,7 @@ export class B2Service implements OnModuleInit {
   private s3Client: S3Client;
   private bucketName: string;
   private endpoint: string;
+  private publicUrl: string;
   private accountId: string;
 
   constructor(private configService: ConfigService) {}
@@ -22,6 +23,7 @@ export class B2Service implements OnModuleInit {
     const secretAccessKey = this.configService.get<string>('R2_SECRET_ACCESS_KEY');
     this.accountId = this.configService.get<string>('R2_ACCOUNT_ID');
     this.endpoint = this.configService.get<string>('R2_ENDPOINT');
+    this.publicUrl = this.configService.get<string>('R2_PUBLIC_URL');
 
     if (!accessKeyId || !secretAccessKey || !this.bucketName || !this.accountId || !this.endpoint) {
       console.warn('R2 credentials not configured. File uploads will be disabled.');
@@ -79,8 +81,13 @@ export class B2Service implements OnModuleInit {
         }),
       );
 
-      // Construct public URL
-      const fileUrl = `${this.endpoint}/${this.bucketName}/${fullPath}`;
+      // Construct public URL — prefer R2_PUBLIC_URL (e.g. https://pub-XXX.r2.dev
+      // or a custom domain). The S3 endpoint requires signed requests and won't
+      // load directly in <img> tags.
+      const base = this.publicUrl
+        ? this.publicUrl.replace(/\/$/, '')
+        : `${this.endpoint}/${this.bucketName}`;
+      const fileUrl = `${base}/${fullPath}`;
 
       return {
         fileName: fullPath,
