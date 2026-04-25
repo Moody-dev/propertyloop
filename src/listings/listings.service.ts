@@ -188,7 +188,7 @@ export class ListingsService {
         images: dto.images,
         virtualTourUrl: dto.virtualTourUrl,
         videoUrl: dto.videoUrl,
-        status: ListingStatus.PENDING_REVIEW,
+        status: ListingStatus.ACTIVE,
       },
       include: { documents: true },
     });
