@@ -13,7 +13,9 @@ export class UploadController {
   constructor(private readonly b2Service: B2Service) {}
 
   @Post('profile-picture')
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(
+    FileInterceptor('file', { limits: { fileSize: 5 * 1024 * 1024 } }),
+  )
   async uploadProfilePicture(@UploadedFile() file: any) {
     if (!file) {
       throw new BadRequestException('No file provided');

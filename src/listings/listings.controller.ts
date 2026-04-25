@@ -71,7 +71,9 @@ export class ListingsController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.AGENT)
   @Post('upload/photo')
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(
+    FileInterceptor('file', { limits: { fileSize: 10 * 1024 * 1024 } }),
+  )
   async uploadPhoto(@UploadedFile() file: any) {
     return this.b2Service.uploadFile(file, 'listings');
   }
@@ -79,7 +81,9 @@ export class ListingsController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.AGENT)
   @Post('upload/video')
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(
+    FileInterceptor('file', { limits: { fileSize: 50 * 1024 * 1024 } }),
+  )
   async uploadVideo(@UploadedFile() file: any) {
     return this.b2Service.uploadFile(file, 'listings-videos');
   }
