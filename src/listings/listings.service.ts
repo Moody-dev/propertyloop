@@ -393,6 +393,7 @@ export class ListingsService {
       coverImage: listing.coverImage,
       images: listing.images,
       virtualTourUrl: listing.virtualTourUrl,
+      videoUrl: listing.videoUrl,
       rating: listing.rating,
       verified: listing.verified,
       status: listing.status,
