@@ -131,8 +131,22 @@ export class AuthService {
 
     const tokens = await this.issueTokens(user.id, user.email, user.role, meta);
 
+    // Reload with relations so the client receives the freshly-created
+    // buyerProfile / agentProfile / vendorProfile right away — without
+    // this, the dashboard pre-fill on first paint is empty until /auth/me
+    // resolves on a later refresh.
+    const fullUser = await this.prisma.user.findUnique({
+      where: { id: user.id },
+      include: {
+        buyerProfile: true,
+        agentProfile: true,
+        vendorProfile: true,
+        settings: true,
+      },
+    });
+
     return {
-      user: this.toPublicUser(user),
+      user: this.toFullUser(fullUser ?? user),
       ...tokens,
     };
   }
@@ -144,6 +158,12 @@ export class AuthService {
   async login(dto: LoginDto, meta: SessionMeta) {
     const user = await this.prisma.user.findUnique({
       where: { email: dto.email.toLowerCase() },
+      include: {
+        buyerProfile: true,
+        agentProfile: true,
+        vendorProfile: true,
+        settings: true,
+      },
     });
     if (!user || user.deletedAt || !user.isActive) {
       throw new UnauthorizedException('Invalid email or password');
@@ -157,7 +177,7 @@ export class AuthService {
     const tokens = await this.issueTokens(user.id, user.email, user.role, meta);
 
     return {
-      user: this.toPublicUser(user),
+      user: this.toFullUser(user),
       ...tokens,
     };
   }
@@ -238,8 +258,18 @@ export class AuthService {
       });
     }
 
+    const fullUser = await this.prisma.user.findUnique({
+      where: { id: stored.user.id },
+      include: {
+        buyerProfile: true,
+        agentProfile: true,
+        vendorProfile: true,
+        settings: true,
+      },
+    });
+
     return {
-      user: this.toPublicUser(stored.user),
+      user: this.toFullUser(fullUser ?? stored.user),
       accessToken,
       refreshToken: newRaw,
     };
