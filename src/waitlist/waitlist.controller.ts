@@ -8,6 +8,7 @@ import {
   Delete,
   Response,
   UseGuards,
+  Query,
 } from '@nestjs/common';
 import { Response as ExpressResponse } from 'express';
 import { WaitlistService } from './waitlist.service';
@@ -43,6 +44,16 @@ export class WaitlistController {
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', 'attachment; filename="waitlist.csv"');
     res.send(csv);
+  }
+
+  @Get('prefill')
+  prefill(@Query('token') token: string) {
+    return this.waitlistService.prefillFromToken(token);
+  }
+
+  @Patch(':id/activate')
+  activate(@Param('id') id: string) {
+    return this.waitlistService.activate(id);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)

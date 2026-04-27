@@ -56,3 +56,6 @@ pids
 report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 
 /generated/prisma
+
+# Generated waitlist invite URLs (contain signed tokens — keep out of git)
+scripts/output/

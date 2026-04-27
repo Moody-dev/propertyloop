@@ -1,8 +1,9 @@
-import { Injectable, ConflictException } from '@nestjs/common';
+import { Injectable, ConflictException, BadRequestException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { MailService } from '../mail/mail.service';
 import { CreateWaitlistDto } from './dto/create-waitlist.dto';
 import { UpdateWaitlistDto } from './dto/update-waitlist.dto';
+import * as jwt from 'jsonwebtoken';
 
 @Injectable()
 export class WaitlistService {
@@ -289,6 +290,73 @@ export class WaitlistService {
   remove(id: string) {
     return this.prisma.waitlistEntry.delete({
       where: { id },
+    });
+  }
+
+  private get tokenSecret(): string {
+    return process.env.WAITLIST_TOKEN_SECRET || 'wl-dev-secret-change-in-prod';
+  }
+
+  private readonly typeToRole: Record<string, string> = {
+    REAL_ESTATE_AGENT: 'agent',
+    BUILDER: 'vendor',
+    BUILDING_MATERIALS_SUPPLIER_INSTALLER: 'vendor',
+    PARTNER_INVESTOR: 'buyer',
+  };
+
+  generateToken(entry: {
+    id: string;
+    first_name: string;
+    last_name: string;
+    email: string;
+    phone: string;
+    location?: string | null;
+    type: string;
+  }): string {
+    return jwt.sign(
+      {
+        wlId: entry.id,
+        name: `${entry.first_name} ${entry.last_name}`.trim(),
+        email: entry.email,
+        phone: entry.phone,
+        location: entry.location ?? '',
+        role: this.typeToRole[entry.type] ?? 'buyer',
+      },
+      this.tokenSecret,
+      { expiresIn: '90d' },
+    );
+  }
+
+  async prefillFromToken(token: string) {
+    let payload: any;
+    try {
+      payload = jwt.verify(token, this.tokenSecret);
+    } catch {
+      throw new BadRequestException('Invalid or expired waitlist token');
+    }
+
+    const entry = await this.prisma.waitlistEntry.findUnique({
+      where: { id: payload.wlId },
+    });
+    if (!entry) throw new NotFoundException('Waitlist entry not found');
+
+    return {
+      wlId: entry.id,
+      name: payload.name as string,
+      email: payload.email as string,
+      phone: payload.phone as string,
+      location: payload.location as string,
+      role: payload.role as string,
+      activated: entry.activated,
+    };
+  }
+
+  async activate(id: string) {
+    const entry = await this.prisma.waitlistEntry.findUnique({ where: { id } });
+    if (!entry) throw new NotFoundException('Waitlist entry not found');
+    return this.prisma.waitlistEntry.update({
+      where: { id },
+      data: { activated: true, activatedAt: new Date() },
     });
   }
 
