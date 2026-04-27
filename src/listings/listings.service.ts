@@ -217,6 +217,16 @@ export class ListingsService {
     if (dto.priceNaira !== undefined) {
       data.priceNaira = dto.priceNaira;
       data.priceLabel = `₦${dto.priceNaira.toLocaleString('en-NG')}`;
+      // Record price change if different
+      if (listing.priceNaira !== dto.priceNaira) {
+        await this.prisma.listingPriceHistory.create({
+          data: {
+            listingId,
+            oldPrice: listing.priceNaira,
+            newPrice: dto.priceNaira,
+          },
+        });
+      }
     }
     if (dto.period !== undefined) data.period = dto.period;
     if (dto.address !== undefined) data.address = dto.address;
@@ -352,6 +362,28 @@ export class ListingsService {
         where: { verified: true },
       }),
     };
+  }
+
+  // ─── Price History ────────────────────────────────────────────────────────
+
+  async getPriceHistory(listingId: string) {
+    const listing = await this.prisma.listing.findUnique({ where: { id: listingId } });
+    if (!listing) throw new NotFoundException('Listing not found');
+    return this.prisma.listingPriceHistory.findMany({
+      where: { listingId },
+      orderBy: { changedAt: 'desc' },
+    });
+  }
+
+  // ─── Logbook for a listing ───────────────────────────────────────────────
+
+  async getLogbookEntries(listingId: string) {
+    const listing = await this.prisma.listing.findUnique({ where: { id: listingId } });
+    if (!listing) throw new NotFoundException('Listing not found');
+    return this.prisma.logbookEntry.findMany({
+      where: { listingId },
+      orderBy: { completedAt: 'desc' },
+    });
   }
 
   // ─── Helpers ──────────────────────────────────────────────────────────────

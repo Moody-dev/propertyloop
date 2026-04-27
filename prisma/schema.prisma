@@ -24,15 +24,17 @@ enum UserType {
 }
 
 model WaitlistEntry {
-  id           String   @id @default(uuid())
+  id           String    @id @default(uuid())
   first_name   String
   last_name    String
   company_name String?
   location     String?
   phone        String
-  email        String   @unique
-  type         UserType @default(REAL_ESTATE_AGENT)
-  created_at   DateTime @default(now())
+  email        String    @unique
+  type         UserType  @default(REAL_ESTATE_AGENT)
+  activated    Boolean   @default(false)
+  activatedAt  DateTime?
+  created_at   DateTime  @default(now())
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -457,6 +459,7 @@ model Listing {
   shortletBookings  ShortletBooking[]
   rentalApplications RentalApplication[]
   logbookEntries LogbookEntry[]
+  priceHistory   ListingPriceHistory[]
 
   @@index([agentId])
   @@index([type])
@@ -854,6 +857,21 @@ model LogbookEntry {
 
   @@index([listingId])
   @@index([ownerUserId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Listing price history — recorded on each price update by agent
+// ─────────────────────────────────────────────────────────────────────────────
+
+model ListingPriceHistory {
+  id        String  @id @default(cuid())
+  listingId String
+  listing   Listing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  oldPrice  Int
+  newPrice  Int
+  changedAt DateTime @default(now())
+
+  @@index([listingId])
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

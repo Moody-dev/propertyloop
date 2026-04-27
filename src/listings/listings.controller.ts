@@ -142,4 +142,16 @@ export class ListingsController {
   ) {
     return this.listingsService.removeDocument(user.id, id, docId);
   }
+
+  // ─── Price history & logbook (public) ────────────────────────────────────
+
+  @Get(':id/price-history')
+  getPriceHistory(@Param('id') id: string) {
+    return this.listingsService.getPriceHistory(id);
+  }
+
+  @Get(':id/logbook')
+  getLogbookEntries(@Param('id') id: string) {
+    return this.listingsService.getLogbookEntries(id);
+  }
 }
