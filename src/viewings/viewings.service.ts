@@ -90,6 +90,61 @@ export class ViewingsService {
     return this.update(agentId, viewingId, { status: ViewingStatus.CANCELLED });
   }
 
+  async listForBuyer(buyerUserId: string, dto: ListViewingsDto) {
+    const page = dto.page ?? 1;
+    const limit = dto.limit ?? 24;
+    const skip = (page - 1) * limit;
+
+    const where: Prisma.ViewingWhereInput = { buyerUserId };
+    if (dto.status) where.status = dto.status;
+    if (dto.upcoming) where.scheduledFor = { gte: new Date() };
+
+    const [items, total] = await Promise.all([
+      this.prisma.viewing.findMany({
+        where,
+        orderBy: { scheduledFor: dto.upcoming ? 'asc' : 'desc' },
+        skip,
+        take: limit,
+        include: {
+          listing: {
+            select: { id: true, title: true, coverImage: true, location: true, slug: true },
+          },
+          agent: {
+            select: { id: true, name: true, phone: true, avatarUrl: true },
+          },
+        },
+      }),
+      this.prisma.viewing.count({ where }),
+    ]);
+
+    return { items, total, page, limit, pages: Math.ceil(total / limit) };
+  }
+
+  async cancelMine(buyerUserId: string, viewingId: string) {
+    const viewing = await this.prisma.viewing.findUnique({
+      where: { id: viewingId },
+    });
+    if (!viewing) throw new NotFoundException('Viewing not found');
+    if (viewing.buyerUserId !== buyerUserId) {
+      throw new ForbiddenException('You can only cancel your own viewings');
+    }
+    if (
+      viewing.status !== ViewingStatus.PENDING &&
+      viewing.status !== ViewingStatus.CONFIRMED
+    ) {
+      throw new ForbiddenException(
+        'Only pending or confirmed viewings can be cancelled',
+      );
+    }
+    return this.prisma.viewing.update({
+      where: { id: viewingId },
+      data: { status: ViewingStatus.CANCELLED },
+      include: {
+        listing: { select: { id: true, title: true, coverImage: true, location: true } },
+      },
+    });
+  }
+
   async remove(agentId: string, viewingId: string) {
     const viewing = await this.prisma.viewing.findUnique({
       where: { id: viewingId },

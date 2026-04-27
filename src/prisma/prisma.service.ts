@@ -4,7 +4,10 @@ import { Pool } from 'pg';
 import { PrismaClient } from '../../generated/prisma/client';
 
 @Injectable()
-export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
+export class PrismaService
+  extends PrismaClient
+  implements OnModuleInit, OnModuleDestroy
+{
   constructor() {
     const databaseUrl = process.env.DATABASE_URL;
     if (!databaseUrl) {

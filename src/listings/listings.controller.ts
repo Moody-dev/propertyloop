@@ -18,6 +18,7 @@ import { CreateListingDto } from './dto/create-listing.dto';
 import { UpdateListingDto } from './dto/update-listing.dto';
 import { ListListingsDto } from './dto/list-listings.dto';
 import { AddListingDocumentDto } from './dto/add-document.dto';
+import { AddLogbookEntryDto } from './dto/add-logbook-entry.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -153,5 +154,27 @@ export class ListingsController {
   @Get(':id/logbook')
   getLogbookEntries(@Param('id') id: string) {
     return this.listingsService.getLogbookEntries(id);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.AGENT)
+  @Post(':id/logbook')
+  addLogbookEntry(
+    @CurrentUser() user: CurrentUserData,
+    @Param('id') id: string,
+    @Body() dto: AddLogbookEntryDto,
+  ) {
+    return this.listingsService.addLogbookEntry(user.id, id, dto);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.AGENT)
+  @Delete(':id/logbook/:entryId')
+  removeLogbookEntry(
+    @CurrentUser() user: CurrentUserData,
+    @Param('id') id: string,
+    @Param('entryId') entryId: string,
+  ) {
+    return this.listingsService.removeLogbookEntry(user.id, id, entryId);
   }
 }

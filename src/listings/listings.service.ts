@@ -386,6 +386,64 @@ export class ListingsService {
     });
   }
 
+  async addLogbookEntry(
+    agentId: string,
+    listingId: string,
+    dto: {
+      category: string;
+      title: string;
+      description?: string;
+      vendorName: string;
+      vendorId?: string;
+      cost: number;
+      completedAt?: Date;
+    },
+  ) {
+    const listing = await this.prisma.listing.findUnique({
+      where: { id: listingId },
+    });
+    if (!listing) throw new NotFoundException('Listing not found');
+    if (listing.agentId !== agentId) {
+      throw new ForbiddenException(
+        'You can only add logbook entries to your own listings',
+      );
+    }
+    return this.prisma.logbookEntry.create({
+      data: {
+        listingId,
+        ownerUserId: agentId,
+        category: dto.category,
+        title: dto.title,
+        description: dto.description,
+        vendorName: dto.vendorName,
+        vendorId: dto.vendorId,
+        cost: dto.cost,
+        completedAt: dto.completedAt ?? new Date(),
+        verified: false,
+      },
+    });
+  }
+
+  async removeLogbookEntry(agentId: string, listingId: string, entryId: string) {
+    const listing = await this.prisma.listing.findUnique({
+      where: { id: listingId },
+    });
+    if (!listing) throw new NotFoundException('Listing not found');
+    if (listing.agentId !== agentId) {
+      throw new ForbiddenException(
+        'You can only modify your own listings',
+      );
+    }
+    const entry = await this.prisma.logbookEntry.findUnique({
+      where: { id: entryId },
+    });
+    if (!entry || entry.listingId !== listingId) {
+      throw new NotFoundException('Logbook entry not found');
+    }
+    await this.prisma.logbookEntry.delete({ where: { id: entryId } });
+    return { success: true };
+  }
+
   // ─── Helpers ──────────────────────────────────────────────────────────────
 
   private async generateUniqueSlug(title: string): Promise<string> {
@@ -431,6 +489,7 @@ export class ListingsService {
       status: listing.status,
       viewsCount: listing.viewsCount,
       createdAt: listing.createdAt,
+      updatedAt: listing.updatedAt,
       documents: listing.documents,
       agent: agent
         ? {

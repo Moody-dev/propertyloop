@@ -38,6 +38,26 @@ export class ViewingsController {
     return this.viewingsService.create(dto, user?.id);
   }
 
+  // ─── Buyer endpoints ─────────────────────────────────────────────────────
+
+  @UseGuards(JwtAuthGuard)
+  @Get('me')
+  listMine(
+    @CurrentUser() user: CurrentUserData,
+    @Query() query: ListViewingsDto,
+  ) {
+    return this.viewingsService.listForBuyer(user.id, query);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('me/:id/cancel')
+  cancelMine(
+    @CurrentUser() user: CurrentUserData,
+    @Param('id') id: string,
+  ) {
+    return this.viewingsService.cancelMine(user.id, id);
+  }
+
   // ─── Agent endpoints ─────────────────────────────────────────────────────
 
   @UseGuards(JwtAuthGuard, RolesGuard)
