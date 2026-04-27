@@ -153,6 +153,19 @@ enum EscrowStatus {
   REFUNDED
 }
 
+enum ReportStatus {
+  PENDING
+  REVIEWED
+  RESOLVED
+  DISMISSED
+}
+
+enum ReportTargetType {
+  AGENT
+  VENDOR
+  LISTING
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Core auth & profiles
 // ─────────────────────────────────────────────────────────────────────────────
@@ -212,6 +225,7 @@ model User {
   logbookEntries             LogbookEntry[]            @relation("LogbookOwner")
   shortletBookings           ShortletBooking[]         @relation("BuyerShortlets")
   rentalApplications         RentalApplication[]       @relation("BuyerRentals")
+  reports                    Report[]                  @relation("UserReports")
 
   @@index([role])
 }
@@ -925,4 +939,28 @@ model RentalApplication {
   @@index([listingId])
   @@index([buyerUserId])
   @@index([status])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Reports (user reports of agents, vendors, listings)
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Report {
+  id         String           @id @default(cuid())
+  reporterId String?
+  reporter   User?            @relation("UserReports", fields: [reporterId], references: [id], onDelete: SetNull)
+
+  targetType ReportTargetType
+  targetId   String
+  reason     String
+
+  status     ReportStatus @default(PENDING)
+  adminNote  String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([targetType, targetId])
+  @@index([status])
+  @@index([reporterId])
 }

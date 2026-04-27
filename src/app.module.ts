@@ -26,6 +26,7 @@ import { StorageModule } from './storage/storage.module';
 import { PaymentsModule } from './payments/payments.module';
 import { AdminModule } from './admin/admin.module';
 import { UploadModule } from './upload/upload.module';
+import { ReportsModule } from './reports/reports.module';
 
 @Module({
   imports: [
@@ -58,6 +59,7 @@ import { UploadModule } from './upload/upload.module';
     MessagesModule,
     AdminModule,
     UploadModule,
+    ReportsModule,
   ],
   controllers: [AppController],
   providers: [AppService, { provide: APP_GUARD, useClass: ThrottlerGuard }],
