@@ -120,6 +120,72 @@ export class ViewingsService {
     return { items, total, page, limit, pages: Math.ceil(total / limit) };
   }
 
+  // ─── Admin scope ────────────────────────────────────────────────────────
+
+  async listAll(dto: ListViewingsDto & { search?: string }) {
+    const page = dto.page ?? 1;
+    const limit = dto.limit ?? 24;
+    const skip = (page - 1) * limit;
+
+    const where: Prisma.ViewingWhereInput = {};
+    if (dto.status) where.status = dto.status;
+    if (dto.upcoming) where.scheduledFor = { gte: new Date() };
+    if (dto.search) {
+      where.OR = [
+        { clientName: { contains: dto.search, mode: 'insensitive' } },
+        { clientPhone: { contains: dto.search, mode: 'insensitive' } },
+        { clientEmail: { contains: dto.search, mode: 'insensitive' } },
+        { listing: { title: { contains: dto.search, mode: 'insensitive' } } },
+      ];
+    }
+
+    const [items, total] = await Promise.all([
+      this.prisma.viewing.findMany({
+        where,
+        orderBy: { scheduledFor: dto.upcoming ? 'asc' : 'desc' },
+        skip,
+        take: limit,
+        include: {
+          listing: {
+            select: { id: true, title: true, coverImage: true, location: true, slug: true },
+          },
+          agent: {
+            select: { id: true, name: true, email: true, avatarUrl: true, phone: true },
+          },
+        },
+      }),
+      this.prisma.viewing.count({ where }),
+    ]);
+
+    return { items, total, page, limit, pages: Math.ceil(total / limit) };
+  }
+
+  async setStatus(viewingId: string, status: ViewingStatus) {
+    const viewing = await this.prisma.viewing.findUnique({
+      where: { id: viewingId },
+    });
+    if (!viewing) throw new NotFoundException('Viewing not found');
+    return this.prisma.viewing.update({
+      where: { id: viewingId },
+      data: { status },
+      include: {
+        listing: { select: { id: true, title: true, coverImage: true, location: true } },
+        agent: {
+          select: { id: true, name: true, email: true, avatarUrl: true, phone: true },
+        },
+      },
+    });
+  }
+
+  async removeAsAdmin(viewingId: string) {
+    const viewing = await this.prisma.viewing.findUnique({
+      where: { id: viewingId },
+    });
+    if (!viewing) throw new NotFoundException('Viewing not found');
+    await this.prisma.viewing.delete({ where: { id: viewingId } });
+    return { success: true };
+  }
+
   async cancelMine(buyerUserId: string, viewingId: string) {
     const viewing = await this.prisma.viewing.findUnique({
       where: { id: viewingId },

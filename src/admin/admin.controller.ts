@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
@@ -10,13 +11,21 @@ import {
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
-import { ListingStatus, Role } from '../../generated/prisma/client';
+import {
+  ListingStatus,
+  Role,
+  ViewingStatus,
+} from '../../generated/prisma/client';
 import { AdminService } from './admin.service';
+import { ViewingsService } from '../viewings/viewings.service';
 
 @Controller('admin')
 @UseGuards(JwtAuthGuard)
 export class AdminController {
-  constructor(private readonly adminService: AdminService) {}
+  constructor(
+    private readonly adminService: AdminService,
+    private readonly viewingsService: ViewingsService,
+  ) {}
 
   private checkAdminAccess(role: Role) {
     if (role !== Role.ADMIN) {
@@ -172,5 +181,45 @@ export class AdminController {
   ) {
     this.checkAdminAccess(user.role);
     return this.adminService.setVendorVerified(id, body.verified);
+  }
+
+  // ─── Viewings ────────────────────────────────────────────────────────────
+
+  @Get('viewings')
+  async listViewings(
+    @CurrentUser() user: any,
+    @Query('page') page?: number,
+    @Query('limit') limit?: number,
+    @Query('status') status?: ViewingStatus,
+    @Query('upcoming') upcoming?: string,
+    @Query('search') search?: string,
+  ) {
+    this.checkAdminAccess(user.role);
+    return this.viewingsService.listAll({
+      page: page ? Number(page) : 1,
+      limit: limit ? Number(limit) : 50,
+      status,
+      upcoming: upcoming === 'true' || upcoming === '1',
+      search,
+    });
+  }
+
+  @Patch('viewings/:id/status')
+  async setViewingStatus(
+    @CurrentUser() user: any,
+    @Param('id') id: string,
+    @Body() body: { status: ViewingStatus },
+  ) {
+    this.checkAdminAccess(user.role);
+    return this.viewingsService.setStatus(id, body.status);
+  }
+
+  @Delete('viewings/:id')
+  async deleteViewing(
+    @CurrentUser() user: any,
+    @Param('id') id: string,
+  ) {
+    this.checkAdminAccess(user.role);
+    return this.viewingsService.removeAsAdmin(id);
   }
 }
