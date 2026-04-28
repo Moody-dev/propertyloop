@@ -23,7 +23,11 @@ async function bootstrap() {
   const origins =
     process.env.NODE_ENV === 'production'
       ? prodOrigins
-      : ['http://localhost:5173', ...prodOrigins];
+      : [
+          'http://localhost:5173',
+          'http://localhost:5174', // admin app
+          ...prodOrigins,
+        ];
 
   app.enableCors({ origin: origins, credentials: true });
   app.setGlobalPrefix('api');
