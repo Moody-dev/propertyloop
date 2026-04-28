@@ -33,4 +33,27 @@ export class UploadController {
       fileId: result.fileId,
     };
   }
+
+  @Post('job-attachment')
+  @UseInterceptors(
+    FileInterceptor('file', { limits: { fileSize: 50 * 1024 * 1024 } }),
+  )
+  async uploadJobAttachment(@UploadedFile() file: any) {
+    if (!file) {
+      throw new BadRequestException('No file provided');
+    }
+    const isImage = file.mimetype.startsWith('image/');
+    const isVideo = file.mimetype.startsWith('video/');
+    if (!isImage && !isVideo) {
+      throw new BadRequestException('File must be an image or a video');
+    }
+    const folder = isVideo ? 'job-attachments-videos' : 'job-attachments';
+    const result = await this.b2Service.uploadFile(file, folder);
+    return {
+      url: result.fileUrl,
+      fileName: result.fileName,
+      fileId: result.fileId,
+      mimeType: file.mimetype,
+    };
+  }
 }

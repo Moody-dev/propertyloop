@@ -645,6 +645,7 @@ model VendorJob {
   // Booking details (from BookService.tsx)
   negotiationNotes String? // Free-text negotiation notes between buyer & vendor
   preferredTime    String? // e.g. "Morning", "Afternoon", "Evening"
+  attachments      String[] // Image/video URLs uploaded by buyer at booking time
 
   // Escrow (placeholder until Paystack wiring)
   escrowId      String?      @unique

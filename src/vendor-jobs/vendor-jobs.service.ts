@@ -67,6 +67,7 @@ export class VendorJobsService {
         paymentMethod: dto.paymentMethod,
         scheduledFor: dto.scheduledFor,
         status: JobStatus.PENDING,
+        attachments: dto.attachments ?? [],
       },
       include: {
         vendor: { include: { vendorProfile: true } },
@@ -279,6 +280,7 @@ export class VendorJobsService {
       paymentMethod: job.paymentMethod,
       completionNotes: job.completionNotes,
       completionProofImages: job.completionProofImages,
+      attachments: job.attachments ?? [],
       completedAt: job.completedAt,
       confirmedAt: job.confirmedAt,
       disputeReason: job.disputeReason,

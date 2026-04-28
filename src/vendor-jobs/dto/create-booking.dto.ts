@@ -1,11 +1,14 @@
 import { Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
+  IsArray,
   IsDate,
   IsEmail,
   IsInt,
   IsNotEmpty,
   IsOptional,
   IsString,
+  IsUrl,
   MaxLength,
   Min,
 } from 'class-validator';
@@ -64,4 +67,11 @@ export class CreateBookingDto {
   @IsOptional()
   @MaxLength(20)
   paymentMethod?: string;
+
+  /** Image/video URLs that the buyer uploaded with the request */
+  @IsArray()
+  @IsOptional()
+  @ArrayMaxSize(8)
+  @IsUrl({}, { each: true })
+  attachments?: string[];
 }
