@@ -23,6 +23,20 @@ enum UserType {
   PARTNER_INVESTOR
 }
 
+// Email subscribers from the homepage "Coming Soon" mobile-app CTA modal.
+// Distinct from WaitlistEntry (which is the original PropertyLoop platform
+// waitlist with company / location / role data on every row). This is just
+// "tell me when the app is ready".
+model AppWaitlistEntry {
+  id         String    @id @default(cuid())
+  email      String    @unique
+  source     String?   // "homepage_cta", "footer", etc. — for future segmentation
+  notifiedAt DateTime? // set when we eventually email them about the launch
+  createdAt  DateTime  @default(now())
+
+  @@index([createdAt])
+}
+
 model WaitlistEntry {
   id           String    @id @default(uuid())
   first_name   String

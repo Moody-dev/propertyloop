@@ -16,8 +16,11 @@ import {
   Role,
   ViewingStatus,
 } from '../../generated/prisma/client';
+import { Response as ExpressResponse } from 'express';
+import { Response as ResDecorator } from '@nestjs/common';
 import { AdminService } from './admin.service';
 import { ViewingsService } from '../viewings/viewings.service';
+import { AppWaitlistService } from '../app-waitlist/app-waitlist.service';
 
 @Controller('admin')
 @UseGuards(JwtAuthGuard)
@@ -25,6 +28,7 @@ export class AdminController {
   constructor(
     private readonly adminService: AdminService,
     private readonly viewingsService: ViewingsService,
+    private readonly appWaitlistService: AppWaitlistService,
   ) {}
 
   private checkAdminAccess(role: Role) {
@@ -221,5 +225,46 @@ export class AdminController {
   ) {
     this.checkAdminAccess(user.role);
     return this.viewingsService.removeAsAdmin(id);
+  }
+
+  // ─── App waitlist (mobile app launch subscribers) ──────────────────────
+
+  @Get('app-waitlist')
+  async listAppWaitlist(
+    @CurrentUser() user: any,
+    @Query('page') page?: number,
+    @Query('limit') limit?: number,
+    @Query('search') search?: string,
+  ) {
+    this.checkAdminAccess(user.role);
+    return this.appWaitlistService.list({
+      page: page ? Number(page) : 1,
+      limit: limit ? Number(limit) : 100,
+      search,
+    });
+  }
+
+  @Get('app-waitlist/export')
+  async exportAppWaitlist(
+    @CurrentUser() user: any,
+    @ResDecorator() res: ExpressResponse,
+  ) {
+    this.checkAdminAccess(user.role);
+    const csv = await this.appWaitlistService.exportCsv();
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader(
+      'Content-Disposition',
+      'attachment; filename="app-waitlist.csv"',
+    );
+    res.send(csv);
+  }
+
+  @Delete('app-waitlist/:id')
+  async deleteAppWaitlistEntry(
+    @CurrentUser() user: any,
+    @Param('id') id: string,
+  ) {
+    this.checkAdminAccess(user.role);
+    return this.appWaitlistService.remove(id);
   }
 }
