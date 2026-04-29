@@ -39,6 +39,16 @@ export class B2Service implements OnModuleInit {
           accessKeyId,
           secretAccessKey,
         },
+        // Cloudflare R2 does not understand AWS SDK v3's "always-on"
+        // request checksum behaviour. With the default ("WHEN_SUPPORTED")
+        // the SDK signs every PutObject URL with x-amz-checksum-crc32 and
+        // x-amz-sdk-checksum-algorithm headers, and R2 then resets the
+        // connection mid-stream once the body bytes start flowing.
+        // Switching to WHEN_REQUIRED only adds checksums when the caller
+        // explicitly asks for one, which is what R2 (and most other S3-
+        // compatible services) actually want.
+        requestChecksumCalculation: 'WHEN_REQUIRED',
+        responseChecksumValidation: 'WHEN_REQUIRED',
       });
       console.log('R2 storage initialized successfully');
     } catch (error: any) {
