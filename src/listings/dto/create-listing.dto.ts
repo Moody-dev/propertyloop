@@ -8,6 +8,7 @@ import {
   IsOptional,
   IsString,
   IsUrl,
+  Max,
   MaxLength,
   Min,
 } from 'class-validator';
@@ -30,6 +31,9 @@ export class CreateListingDto {
   @Type(() => Number)
   @IsInt()
   @Min(0)
+  @Max(100_000_000_000, {
+    message: 'priceNaira must be ₦100,000,000,000 or less',
+  })
   priceNaira: number;
 
   @IsString()

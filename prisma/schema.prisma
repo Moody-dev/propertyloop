@@ -439,7 +439,7 @@ model Listing {
   slug         String      @unique
   type         ListingType
   propertyType String // "Flat / Apartment", "Detached House", etc.
-  priceNaira   Int // store as integer naira
+  priceNaira   BigInt // store as integer naira (BigInt — Banana Island can hit ₦5-10B which overflows int4)
   priceLabel   String // "₦65,000,000" — keep frontend's formatted string for backwards compat
   period       String? // "/year" for rentals, "/night" for shortlets
   address      String
@@ -882,8 +882,8 @@ model ListingPriceHistory {
   id        String  @id @default(cuid())
   listingId String
   listing   Listing @relation(fields: [listingId], references: [id], onDelete: Cascade)
-  oldPrice  Int
-  newPrice  Int
+  oldPrice  BigInt
+  newPrice  BigInt
   changedAt DateTime @default(now())
 
   @@index([listingId])

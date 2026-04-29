@@ -35,7 +35,9 @@ export class ShortletBookingsService {
     const nights = Math.ceil(
       (checkOut.getTime() - checkIn.getTime()) / (1000 * 60 * 60 * 24),
     );
-    const subtotal = listing.priceNaira * nights;
+    // listing.priceNaira is BigInt; coerce to Number before multiplying
+    // by `nights` (a plain JS Number). Naira values fit safely.
+    const subtotal = Number(listing.priceNaira) * nights;
     const serviceFee = Math.round(subtotal * 0.1);
     const total = subtotal + serviceFee;
     const escrowId = `SHL-${Date.now()}-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;

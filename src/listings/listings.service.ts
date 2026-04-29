@@ -249,8 +249,10 @@ export class ListingsService {
     if (dto.priceNaira !== undefined) {
       data.priceNaira = dto.priceNaira;
       data.priceLabel = `₦${dto.priceNaira.toLocaleString('en-NG')}`;
-      // Record price change if different
-      if (listing.priceNaira !== dto.priceNaira) {
+      // Record price change if different. listing.priceNaira is BigInt and
+      // dto.priceNaira is a plain Number — BigInt !== Number is always true,
+      // so coerce both sides to Number before comparing.
+      if (Number(listing.priceNaira) !== dto.priceNaira) {
         await this.prisma.listingPriceHistory.create({
           data: {
             listingId,
@@ -369,12 +371,14 @@ export class ListingsService {
       select: { propertyType: true, priceNaira: true },
     });
 
-    // Count by type
+    // Count by type. priceNaira is BigInt — convert to Number for the
+    // running total. Naira amounts are well within JS Number's safe-integer
+    // range (2^53 ≈ ₦9 quadrillion), so the conversion is loss-free.
     const typeCounts: Record<string, number> = {};
     let totalPrice = 0;
     for (const listing of allListings) {
       typeCounts[listing.propertyType] = (typeCounts[listing.propertyType] ?? 0) + 1;
-      totalPrice += listing.priceNaira;
+      totalPrice += Number(listing.priceNaira);
     }
 
     const total = allListings.length;
@@ -501,7 +505,10 @@ export class ListingsService {
       title: listing.title,
       type: listing.type,
       propertyType: listing.propertyType,
-      priceNaira: listing.priceNaira,
+      // priceNaira is BigInt in the DB. Convert to Number for the JSON
+      // wire — JSON.stringify can't serialise BigInt, and naira values
+      // are always well within Number.MAX_SAFE_INTEGER (2^53).
+      priceNaira: Number(listing.priceNaira),
       priceLabel: listing.priceLabel,
       period: listing.period,
       address: listing.address,
