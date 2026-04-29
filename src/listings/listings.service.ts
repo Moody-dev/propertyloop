@@ -155,50 +155,82 @@ export class ListingsService {
   }
 
   async create(agentId: string, dto: CreateListingDto) {
-    const agent = await this.prisma.user.findUnique({
-      where: { id: agentId },
-      include: { agentProfile: true },
-    });
-    if (!agent || agent.role !== Role.AGENT || !agent.agentProfile) {
-      throw new ForbiddenException('Only agents can create listings');
-    }
+    try {
+      const agent = await this.prisma.user.findUnique({
+        where: { id: agentId },
+        include: { agentProfile: true },
+      });
+      if (!agent || agent.role !== Role.AGENT || !agent.agentProfile) {
+        throw new ForbiddenException('Only agents can create listings');
+      }
 
-    const slug = await this.generateUniqueSlug(dto.title);
-    const priceLabel = `₦${dto.priceNaira.toLocaleString('en-NG')}`;
+      const slug = await this.generateUniqueSlug(dto.title);
+      const priceLabel = `₦${dto.priceNaira.toLocaleString('en-NG')}`;
 
-    const listing = await this.prisma.listing.create({
-      data: {
+      const listing = await this.prisma.listing.create({
+        data: {
+          agentId,
+          title: dto.title,
+          slug,
+          type: dto.type,
+          propertyType: dto.propertyType,
+          priceNaira: dto.priceNaira,
+          priceLabel,
+          period: dto.period,
+          address: dto.address,
+          location: dto.location,
+          beds: dto.beds,
+          baths: dto.baths,
+          sqft: dto.sqft,
+          yearBuilt: dto.yearBuilt,
+          description: dto.description,
+          features: dto.features,
+          coverImage: dto.coverImage,
+          images: dto.images,
+          virtualTourUrl: dto.virtualTourUrl,
+          videoUrl: dto.videoUrl,
+          status: ListingStatus.ACTIVE,
+        },
+        include: { documents: true },
+      });
+
+      // Best-effort counter bump. Don't kill the whole listing creation if
+      // the agentProfile row is missing or this update otherwise blows up —
+      // counters can be reconciled by scripts/sync-agent-counters.ts later.
+      try {
+        await this.prisma.agentProfile.update({
+          where: { userId: agentId },
+          data: { listingsCount: { increment: 1 } },
+        });
+      } catch (counterErr) {
+        console.warn(
+          `[listings.create] listingsCount increment failed for agent ${agentId}:`,
+          counterErr,
+        );
+      }
+
+      return listing;
+    } catch (err: any) {
+      // Surface as much detail as possible in Render logs. Keep the
+      // ForbiddenException pass-through intact so the existing 403 still
+      // bubbles up as a 403, not a 500.
+      if (err instanceof ForbiddenException) throw err;
+      console.error('[listings.create] failed', {
         agentId,
-        title: dto.title,
-        slug,
-        type: dto.type,
-        propertyType: dto.propertyType,
-        priceNaira: dto.priceNaira,
-        priceLabel,
-        period: dto.period,
-        address: dto.address,
-        location: dto.location,
-        beds: dto.beds,
-        baths: dto.baths,
-        sqft: dto.sqft,
-        yearBuilt: dto.yearBuilt,
-        description: dto.description,
-        features: dto.features,
-        coverImage: dto.coverImage,
-        images: dto.images,
-        virtualTourUrl: dto.virtualTourUrl,
-        videoUrl: dto.videoUrl,
-        status: ListingStatus.ACTIVE,
-      },
-      include: { documents: true },
-    });
-
-    await this.prisma.agentProfile.update({
-      where: { userId: agentId },
-      data: { listingsCount: { increment: 1 } },
-    });
-
-    return listing;
+        title: dto?.title,
+        type: dto?.type,
+        propertyType: dto?.propertyType,
+        coverImage: dto?.coverImage,
+        imagesCount: dto?.images?.length,
+        videoUrl: dto?.videoUrl,
+        errCode: err?.code,
+        errMessage: err?.message,
+        errMeta: err?.meta,
+        errName: err?.name,
+        stack: err?.stack,
+      });
+      throw err;
+    }
   }
 
   async update(agentId: string, listingId: string, dto: UpdateListingDto) {

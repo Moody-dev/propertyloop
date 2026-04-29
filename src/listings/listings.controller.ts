@@ -117,6 +117,41 @@ export class ListingsController {
     });
   }
 
+  /**
+   * Same idea as the video presign route, for photos and listing documents.
+   * Mobile cellular + Render's edge timeout kills proxied multipart uploads
+   * just as easily as for video — direct-to-R2 dodges the proxy entirely.
+   */
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.AGENT)
+  @Post('upload/photo/presign')
+  async presignPhotoUpload(
+    @Body()
+    dto: {
+      filename: string;
+      contentType: string;
+      size?: number;
+      folder?: 'listings' | 'listing-docs';
+    },
+  ) {
+    if (!dto?.filename) {
+      throw new Error('filename is required');
+    }
+    if (!dto?.contentType) {
+      throw new Error('contentType is required');
+    }
+    if (typeof dto.size === 'number' && dto.size > 10 * 1024 * 1024) {
+      throw new Error('Photo / document must be 10MB or smaller');
+    }
+    const folder = dto.folder === 'listing-docs' ? 'listing-docs' : 'listings';
+    return this.b2Service.getPresignedPutUrl({
+      folder,
+      filename: dto.filename,
+      contentType: dto.contentType,
+      expiresIn: 600,
+    });
+  }
+
   @Get('slug/:slug')
   getBySlug(@Param('slug') slug: string) {
     return this.listingsService.getBySlug(slug);
