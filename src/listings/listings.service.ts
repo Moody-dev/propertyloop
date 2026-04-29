@@ -151,7 +151,13 @@ export class ListingsService {
       this.prisma.listing.count({ where }),
     ]);
 
-    return { items, total, page, limit, pages: Math.ceil(total / limit) };
+    return {
+      items: items.map((l) => this.serialize(l)),
+      total,
+      page,
+      limit,
+      pages: Math.ceil(total / limit),
+    };
   }
 
   async create(agentId: string, dto: CreateListingDto) {
@@ -209,7 +215,7 @@ export class ListingsService {
         );
       }
 
-      return listing;
+      return this.serialize(listing);
     } catch (err: any) {
       // Surface as much detail as possible in Render logs. Keep the
       // ForbiddenException pass-through intact so the existing 403 still
@@ -290,11 +296,12 @@ export class ListingsService {
       }
     }
 
-    return this.prisma.listing.update({
+    const updated = await this.prisma.listing.update({
       where: { id: listingId },
       data,
-      include: { documents: true },
+      include: { documents: true, agent: { include: { agentProfile: true } } },
     });
+    return this.serialize(updated);
   }
 
   async remove(agentId: string, listingId: string) {
