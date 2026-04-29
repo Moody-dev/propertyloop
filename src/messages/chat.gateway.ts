@@ -22,6 +22,7 @@ import type { JwtPayload } from '../auth/strategies/jwt.strategy';
       'https://property-loop.netlify.app',
       'https://propertyloop.ng',
       'https://www.propertyloop.ng',
+      'https://admin.propertyloop.ng',
     ],
     credentials: true,
   },

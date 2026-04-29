@@ -29,6 +29,7 @@ async function bootstrap() {
     'https://waitlist.propertyloop.ng',
     'https://propertyloop.ng',
     'https://www.propertyloop.ng',
+    'https://admin.propertyloop.ng',
   ];
   const origins =
     process.env.NODE_ENV === 'production'
