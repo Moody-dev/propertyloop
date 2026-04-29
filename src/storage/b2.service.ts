@@ -5,6 +5,7 @@ import {
   PutObjectCommand,
   DeleteObjectCommand,
 } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import * as crypto from 'crypto';
 
 @Injectable()
@@ -104,6 +105,50 @@ export class B2Service implements OnModuleInit {
         `File upload failed: ${error.message || 'Unknown error'}`,
       );
     }
+  }
+
+  /**
+   * Mint a presigned PUT URL the browser can upload to directly. The byte
+   * stream never touches our Nest server — useful for large files (videos)
+   * where Render's request timeout would otherwise kill the proxied upload.
+   *
+   * Returns:
+   *   - uploadUrl: time-limited presigned URL (must PUT with the same Content-Type)
+   *   - fileUrl:   the public URL the file will be reachable at after upload
+   *   - key:       the object key (in case the caller needs to delete later)
+   */
+  async getPresignedPutUrl(opts: {
+    folder: string;
+    filename: string;
+    contentType: string;
+    expiresIn?: number; // seconds; default 600 (10 min)
+  }): Promise<{ uploadUrl: string; fileUrl: string; key: string }> {
+    if (!this.s3Client || !this.bucketName) {
+      throw new BadRequestException(
+        'File storage service is not available. Please configure R2 credentials.',
+      );
+    }
+
+    const ext = (opts.filename.split('.').pop() || 'bin').toLowerCase();
+    const random = crypto.randomBytes(4).toString('hex');
+    const key = `${opts.folder}/${Date.now()}-${random}.${ext}`;
+
+    const command = new PutObjectCommand({
+      Bucket: this.bucketName,
+      Key: key,
+      ContentType: opts.contentType,
+    });
+
+    const uploadUrl = await getSignedUrl(this.s3Client, command, {
+      expiresIn: opts.expiresIn ?? 600,
+    });
+
+    const base = this.publicUrl
+      ? this.publicUrl.replace(/\/$/, '')
+      : `${this.endpoint}/${this.bucketName}`;
+    const fileUrl = `${base}/${key}`;
+
+    return { uploadUrl, fileUrl, key };
   }
 
   async deleteFile(fileName: string): Promise<void> {

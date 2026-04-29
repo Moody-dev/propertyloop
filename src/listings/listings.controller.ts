@@ -89,6 +89,34 @@ export class ListingsController {
     return this.b2Service.uploadFile(file, 'listings-videos');
   }
 
+  /**
+   * Mint a presigned PUT URL so the browser can upload large videos straight
+   * to R2 without the bytes proxying through Render (whose request timeout
+   * kills slow long uploads). Agent-only.
+   */
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.AGENT)
+  @Post('upload/video/presign')
+  async presignVideoUpload(
+    @Body() dto: { filename: string; contentType: string; size?: number },
+  ) {
+    if (!dto?.filename) {
+      throw new Error('filename is required');
+    }
+    if (!dto?.contentType?.startsWith('video/')) {
+      throw new Error('contentType must start with video/');
+    }
+    if (typeof dto.size === 'number' && dto.size > 50 * 1024 * 1024) {
+      throw new Error('Video must be 50MB or smaller');
+    }
+    return this.b2Service.getPresignedPutUrl({
+      folder: 'listings-videos',
+      filename: dto.filename,
+      contentType: dto.contentType,
+      expiresIn: 600,
+    });
+  }
+
   @Get('slug/:slug')
   getBySlug(@Param('slug') slug: string) {
     return this.listingsService.getBySlug(slug);
