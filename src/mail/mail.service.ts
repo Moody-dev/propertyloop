@@ -25,7 +25,7 @@ export class MailService {
   }
 
   async sendEmail(sendEmailDto: SendEmailDto) {
-    const { to, subject, html, text } = sendEmailDto;
+    const { to, subject, html, text, replyTo } = sendEmailDto;
 
     try {
       const response = await this.resend.emails.send({
@@ -33,6 +33,8 @@ export class MailService {
         to,
         subject,
         html: html || `<p>${text}</p>`,
+        text,
+        ...(replyTo ? { replyTo } : {}),
       });
 
       return response;

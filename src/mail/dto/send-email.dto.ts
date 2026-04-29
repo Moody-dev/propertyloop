@@ -16,4 +16,9 @@ export class SendEmailDto {
   @IsString()
   @IsOptional()
   html?: string;
+
+  /** Set the Reply-To header — replies go here instead of the from address */
+  @IsEmail()
+  @IsOptional()
+  replyTo?: string;
 }
