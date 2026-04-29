@@ -65,6 +65,16 @@ export class AgentsService {
       case 'most_deals':
         orderBy.push({ agentProfile: { soldRentedCount: 'desc' } });
         break;
+      case 'top_performers':
+        // Closed deals are the strongest signal of an effective agent.
+        // Ties break on active listings (broad market presence), then on
+        // creation date so the order is stable when both counters tie.
+        orderBy.push(
+          { agentProfile: { soldRentedCount: 'desc' } },
+          { agentProfile: { listingsCount: 'desc' } },
+          { createdAt: 'asc' },
+        );
+        break;
       case 'newest':
         orderBy.push({ createdAt: 'desc' });
         break;

@@ -1,7 +1,12 @@
 import { Type } from 'class-transformer';
 import { IsIn, IsInt, IsOptional, IsString, Min } from 'class-validator';
 
-export type AgentSort = 'top_rated' | 'most_listings' | 'most_deals' | 'newest';
+export type AgentSort =
+  | 'top_rated'
+  | 'most_listings'
+  | 'most_deals'
+  | 'top_performers'
+  | 'newest';
 
 export class ListAgentsDto {
   @IsString()
@@ -22,7 +27,7 @@ export class ListAgentsDto {
   minRating?: number;
 
   @IsString()
-  @IsIn(['top_rated', 'most_listings', 'most_deals', 'newest'])
+  @IsIn(['top_rated', 'most_listings', 'most_deals', 'top_performers', 'newest'])
   @IsOptional()
   sort?: AgentSort;
 
