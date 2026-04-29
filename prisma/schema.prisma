@@ -447,7 +447,7 @@ model Listing {
   beds         Int
   baths        Int
   sqft         String // free-text, matches frontend ("2,400")
-  yearBuilt    String
+  yearBuilt    String?
   description  String
   features     String[] // ["24hr Power", "Swimming Pool", ...]
   coverImage   String

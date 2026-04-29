@@ -67,9 +67,9 @@ export class CreateListingDto {
   sqft: string;
 
   @IsString()
-  @IsNotEmpty()
+  @IsOptional()
   @MaxLength(20)
-  yearBuilt: string;
+  yearBuilt?: string;
 
   @IsString()
   @IsNotEmpty()
