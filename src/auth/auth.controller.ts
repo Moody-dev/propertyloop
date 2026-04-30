@@ -122,6 +122,16 @@ export class AuthController {
     return this.authService.resendVerificationEmail(user.id);
   }
 
+  // Public resend — used when a verification link expires and the user
+  // is not (or cannot be) signed in. Always returns success to avoid
+  // leaking which emails are registered. Tightly rate-limited.
+  @Throttle({ default: { ttl: 60000, limit: 3 } })
+  @Post('resend-verification-public')
+  @HttpCode(HttpStatus.OK)
+  resendVerificationPublic(@Body() body: { email: string }) {
+    return this.authService.resendVerificationByEmail(body?.email ?? '');
+  }
+
   // ─── Sessions / active devices ────────────────────────────────────────────
 
   @UseGuards(JwtAuthGuard)

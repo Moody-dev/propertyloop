@@ -477,6 +477,37 @@ export class AuthService {
     return { success: true };
   }
 
+  /**
+   * Public version of resendVerificationEmail — used on the verify-email
+   * error page when a user's link has expired and they haven't (or can't)
+   * log in. Always returns success so we don't leak which emails are
+   * registered. Throttled at the controller layer.
+   */
+  async resendVerificationByEmail(email: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { email: email.trim().toLowerCase() },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        emailVerifiedAt: true,
+        deletedAt: true,
+      },
+    });
+
+    // Don't leak: success regardless of whether user exists / is verified.
+    if (!user || user.deletedAt || user.emailVerifiedAt) {
+      return { success: true };
+    }
+
+    await this.prisma.emailVerificationToken.deleteMany({
+      where: { userId: user.id, usedAt: null },
+    });
+
+    await this.sendEmailVerification(user.id, user.email, user.name);
+    return { success: true };
+  }
+
   private async sendEmailVerification(
     userId: string,
     email: string,
