@@ -57,7 +57,7 @@ export class WaitlistController {
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(Role.AGENT)
+  @Roles(Role.ADMIN)
   @Post(':id/send-email')
   async sendEmail(@Param('id') id: string, @Body() emailDto: SendEmailDto) {
     await this.mailService.sendEmail(emailDto);
@@ -65,14 +65,14 @@ export class WaitlistController {
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(Role.AGENT)
+  @Roles(Role.ADMIN)
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.waitlistService.findOne(id);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(Role.AGENT)
+  @Roles(Role.ADMIN)
   @Patch(':id')
   update(
     @Param('id') id: string,
@@ -82,7 +82,7 @@ export class WaitlistController {
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(Role.AGENT)
+  @Roles(Role.ADMIN)
   @Delete(':id')
   remove(@Param('id') id: string) {
     return this.waitlistService.remove(id);
