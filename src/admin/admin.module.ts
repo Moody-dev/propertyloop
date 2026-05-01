@@ -4,9 +4,10 @@ import { AdminService } from './admin.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ViewingsModule } from '../viewings/viewings.module';
 import { AppWaitlistModule } from '../app-waitlist/app-waitlist.module';
+import { MessagesModule } from '../messages/messages.module';
 
 @Module({
-  imports: [ViewingsModule, AppWaitlistModule],
+  imports: [ViewingsModule, AppWaitlistModule, MessagesModule],
   providers: [AdminService, PrismaService],
   controllers: [AdminController],
 })

@@ -107,6 +107,7 @@ enum ConversationParticipantRole {
   HOMEOWNER
   TENANT
   BUYER
+  ADMIN
 }
 
 enum LeadStatus {

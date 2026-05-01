@@ -5,6 +5,7 @@ import {
   Get,
   Param,
   Patch,
+  Post,
   Query,
   UseGuards,
   ForbiddenException,
@@ -21,6 +22,25 @@ import { Response as ResDecorator } from '@nestjs/common';
 import { AdminService } from './admin.service';
 import { ViewingsService } from '../viewings/viewings.service';
 import { AppWaitlistService } from '../app-waitlist/app-waitlist.service';
+import { MessagesService } from '../messages/messages.service';
+import { ConversationParticipantRole } from '../../generated/prisma/client';
+import { PrismaService } from '../prisma/prisma.service';
+import { NotFoundException } from '@nestjs/common';
+
+function mapUserRoleToConversationRole(
+  userRole: Role,
+): ConversationParticipantRole {
+  switch (userRole) {
+    case Role.AGENT:
+      return ConversationParticipantRole.AGENT;
+    case Role.VENDOR:
+      return ConversationParticipantRole.VENDOR;
+    case Role.ADMIN:
+      return ConversationParticipantRole.ADMIN;
+    default:
+      return ConversationParticipantRole.BUYER;
+  }
+}
 
 @Controller('admin')
 @UseGuards(JwtAuthGuard)
@@ -29,6 +49,8 @@ export class AdminController {
     private readonly adminService: AdminService,
     private readonly viewingsService: ViewingsService,
     private readonly appWaitlistService: AppWaitlistService,
+    private readonly messagesService: MessagesService,
+    private readonly prisma: PrismaService,
   ) {}
 
   private checkAdminAccess(role: Role) {
@@ -266,5 +288,53 @@ export class AdminController {
   ) {
     this.checkAdminAccess(user.role);
     return this.appWaitlistService.remove(id);
+  }
+
+  // ─── Messaging — admin reaches out to a user ─────────────────────────────
+  // POST /admin/messages/start
+  // Body: { recipientId: string, listingId?: string, viewingId?: string, text?: string }
+  // Creates a conversation between the admin and the recipient (or returns
+  // the existing one if they've already spoken). If `viewingId` is supplied,
+  // we look up its listing so the conversation is tagged with that listing
+  // for context. Returns { conversationId }.
+  @Post('messages/start')
+  async startConversation(
+    @CurrentUser() user: any,
+    @Body()
+    body: {
+      recipientId: string;
+      listingId?: string;
+      viewingId?: string;
+      text?: string;
+    },
+  ) {
+    this.checkAdminAccess(user.role);
+
+    const recipient = await this.prisma.user.findUnique({
+      where: { id: body.recipientId },
+      select: { id: true, role: true, deletedAt: true },
+    });
+    if (!recipient || recipient.deletedAt) {
+      throw new NotFoundException('Recipient not found');
+    }
+
+    // Resolve listingId from viewingId when provided
+    let listingId = body.listingId;
+    if (!listingId && body.viewingId) {
+      const viewing = await this.prisma.viewing.findUnique({
+        where: { id: body.viewingId },
+        select: { listingId: true },
+      });
+      if (!viewing) throw new NotFoundException('Viewing not found');
+      listingId = viewing.listingId;
+    }
+
+    return this.messagesService.createOrFind(user.id, {
+      recipientId: recipient.id,
+      recipientRole: mapUserRoleToConversationRole(recipient.role),
+      senderRole: ConversationParticipantRole.ADMIN,
+      listingId,
+      text: body.text?.trim() || undefined,
+    });
   }
 }
