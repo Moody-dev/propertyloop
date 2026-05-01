@@ -141,7 +141,8 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     } catch (err) {
       client.emit('error', {
         event: 'send_message',
-        message: err?.message || 'Failed to send message',
+        message:
+          err instanceof Error ? err.message : 'Failed to send message',
       });
     }
   }
