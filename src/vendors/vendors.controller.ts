@@ -23,10 +23,14 @@ import {
   CurrentUserData,
 } from '../auth/decorators/current-user.decorator';
 import { Role } from '../../generated/prisma/client';
+import { B2Service } from '../storage/b2.service';
 
 @Controller('vendors')
 export class VendorsController {
-  constructor(private readonly vendorsService: VendorsService) {}
+  constructor(
+    private readonly vendorsService: VendorsService,
+    private readonly b2Service: B2Service,
+  ) {}
 
   // ─── Public directory ────────────────────────────────────────────────────
 
@@ -64,6 +68,42 @@ export class VendorsController {
   @Get('me/stats')
   getStats(@CurrentUser() user: CurrentUserData) {
     return this.vendorsService.getStats(user.id);
+  }
+
+  /**
+   * Direct-to-R2 presigned PUT for vendor portfolio images and banners.
+   * Bypasses the backend proxy so big work-photo files don't hit Render's
+   * ~10s edge timeout. Frontend calls this, PUTs the file straight to R2,
+   * then PATCHes /vendors/me with the resulting fileUrl.
+   */
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.VENDOR)
+  @Post('me/portfolio/presign')
+  async presignPortfolioUpload(
+    @CurrentUser() user: CurrentUserData,
+    @Body()
+    dto: {
+      filename: string;
+      contentType: string;
+      size?: number;
+      kind?: 'portfolio' | 'banner';
+    },
+  ) {
+    if (!dto?.filename) throw new Error('filename is required');
+    if (!dto?.contentType) throw new Error('contentType is required');
+    if (typeof dto.size === 'number' && dto.size > 10 * 1024 * 1024) {
+      throw new Error('Image must be 10MB or smaller');
+    }
+    const folder =
+      dto.kind === 'banner'
+        ? `vendor-banners/${user.id}`
+        : `vendor-portfolio/${user.id}`;
+    return this.b2Service.getPresignedPutUrl({
+      folder,
+      filename: dto.filename,
+      contentType: dto.contentType,
+      expiresIn: 600,
+    });
   }
 
   // ─── Public profile + reviews ────────────────────────────────────────────
