@@ -183,6 +183,19 @@ enum ReportTargetType {
   LISTING
 }
 
+enum SubscriptionTier {
+  FOUNDING
+  STANDARD
+  PRO
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  GRACE_PERIOD
+  LAPSED
+  CANCELLED
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Core auth & profiles
 // ─────────────────────────────────────────────────────────────────────────────
@@ -281,6 +294,15 @@ model AgentProfile {
   soldRentedCount Int     @default(0)
   verified        Boolean @default(false) // KYC via Smile Identity
 
+  // Subscription
+  subscriptionTier              SubscriptionTier?
+  subscriptionStatus            SubscriptionStatus?
+  subscriptionRenewsAt          DateTime?
+  paystackSubscriptionCode      String?  // Paystack subscription code for the active sub
+  paystackCustomerCode          String?  // Paystack customer code
+
+  subscriptionPayments SubscriptionPayment[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -326,6 +348,23 @@ model VendorBankAccount {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+model SubscriptionPayment {
+  id              String @id @default(cuid())
+  agentProfileId  String
+  agentProfile    AgentProfile @relation(fields: [agentProfileId], references: [id], onDelete: Cascade)
+
+  tier            SubscriptionTier
+  amountKobo      Int
+  paystackRef     String   @unique  // Paystack transaction reference
+  billingPeriodStart DateTime
+  billingPeriodEnd   DateTime
+  status          String   // "success" | "failed" | "pending"
+
+  createdAt DateTime @default(now())
+
+  @@index([agentProfileId])
 }
 
 model UserSettings {

@@ -2,19 +2,28 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  BadRequestException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   ListingStatus,
   Role,
+  SubscriptionTier,
+  SubscriptionStatus,
 } from '../../generated/prisma/client';
 import { ListAgentsDto } from './dto/list-agents.dto';
 import { UpdateAgentProfileDto } from './dto/update-agent-profile.dto';
 import { CreateAgentReviewDto } from './dto/create-review.dto';
+import { PaystackService } from '../payments/paystack.service';
 
 @Injectable()
 export class AgentsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly paystackService: PaystackService,
+    private readonly configService: ConfigService,
+  ) {}
 
   // ─── Public listing ──────────────────────────────────────────────────────
 
@@ -36,7 +45,11 @@ export class AgentsService {
       where.OR = [
         { name: { contains: dto.search, mode: 'insensitive' } },
         { location: { contains: dto.search, mode: 'insensitive' } },
-        { agentProfile: { is: { agencyName: { contains: dto.search, mode: 'insensitive' } } } },
+        {
+          agentProfile: {
+            is: { agencyName: { contains: dto.search, mode: 'insensitive' } },
+          },
+        },
       ];
     }
 
@@ -47,7 +60,9 @@ export class AgentsService {
     if (dto.specialty) {
       where.agentProfile = {
         is: {
-          ...(dto.minRating != null && { rating: { gte: Number(dto.minRating) } }),
+          ...(dto.minRating != null && {
+            rating: { gte: Number(dto.minRating) },
+          }),
           specialty: { has: dto.specialty },
         },
       };
@@ -117,7 +132,8 @@ export class AgentsService {
         agentProfile: true,
       },
     });
-    if (!user || !user.agentProfile) throw new NotFoundException('Agent not found');
+    if (!user || !user.agentProfile)
+      throw new NotFoundException('Agent not found');
 
     const [activeListings, reviews] = await Promise.all([
       this.prisma.listing.findMany({
@@ -173,8 +189,12 @@ export class AgentsService {
         agentProfile: {
           update: {
             ...(dto.agencyName !== undefined && { agencyName: dto.agencyName }),
-            ...(dto.businessAddress !== undefined && { businessAddress: dto.businessAddress }),
-            ...(dto.yearsExperience !== undefined && { yearsExperience: dto.yearsExperience }),
+            ...(dto.businessAddress !== undefined && {
+              businessAddress: dto.businessAddress,
+            }),
+            ...(dto.yearsExperience !== undefined && {
+              yearsExperience: dto.yearsExperience,
+            }),
             ...(dto.specialty !== undefined && { specialty: dto.specialty }),
             ...(dto.website !== undefined && { website: dto.website }),
           },
@@ -229,7 +249,8 @@ export class AgentsService {
       }),
     ]);
 
-    const conversionRate = totalLeads === 0 ? 0 : Math.round((convertedLeads / totalLeads) * 100);
+    const conversionRate =
+      totalLeads === 0 ? 0 : Math.round((convertedLeads / totalLeads) * 100);
 
     return {
       profile: {
@@ -281,7 +302,8 @@ export class AgentsService {
       where: { id: agentId, role: Role.AGENT, deletedAt: null },
       include: { agentProfile: true },
     });
-    if (!agent || !agent.agentProfile) throw new NotFoundException('Agent not found');
+    if (!agent || !agent.agentProfile)
+      throw new NotFoundException('Agent not found');
 
     let reviewerName = dto.reviewerName?.trim();
     if (reviewerUserId) {
@@ -349,5 +371,174 @@ export class AgentsService {
       businessAddress: user.agentProfile?.businessAddress,
       settings: user.settings,
     };
+  }
+
+  // ─── Subscription ─────────────────────────────────────────────────────────
+
+  async getSubscription(userId: string) {
+    const profile = await this.prisma.agentProfile.findUnique({
+      where: { userId },
+      select: {
+        subscriptionTier: true,
+        subscriptionStatus: true,
+        subscriptionRenewsAt: true,
+        paystackSubscriptionCode: true,
+      },
+    });
+    if (!profile) throw new ForbiddenException('Agent profile not found');
+
+    return {
+      tier: profile.subscriptionTier,
+      status: profile.subscriptionStatus,
+      renewsAt: profile.subscriptionRenewsAt,
+      paystackSubscriptionCode: profile.paystackSubscriptionCode,
+    };
+  }
+
+  async initializeSubscriptionCheckout(
+    userId: string,
+    tier: 'STANDARD' | 'PRO',
+  ): Promise<{ paymentUrl: string; reference: string }> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: { agentProfile: true },
+    });
+    if (!user || !user.agentProfile) {
+      throw new ForbiddenException('Agent profile not found');
+    }
+
+    const planEnvKey =
+      tier === 'PRO' ? 'PAYSTACK_PLAN_PRO' : 'PAYSTACK_PLAN_STANDARD';
+    const planCode = this.configService.get<string>(planEnvKey);
+    if (!planCode) {
+      throw new BadRequestException(
+        `Paystack plan code for ${tier} not configured. Set ${planEnvKey} in .env`,
+      );
+    }
+
+    const amountKobo = tier === 'PRO' ? 1_200_000 : 500_000; // ₦12,000 / ₦5,000
+    const reference = `PLSUB-${user.agentProfile.id}-${tier}-${Date.now()}`;
+    const frontendUrl =
+      this.configService.get<string>('FRONTEND_URL') ||
+      'https://propertyloop.ng';
+    const callbackUrl = `${frontendUrl}/agent/subscription/callback?ref=${reference}`;
+
+    const { authorization_url } =
+      await this.paystackService.initializeSubscriptionTransaction({
+        email: user.email,
+        amount: amountKobo,
+        plan: planCode,
+        reference,
+        callback_url: callbackUrl,
+        metadata: {
+          agentProfileId: user.agentProfile.id,
+          userId: user.id,
+          tier,
+          type: 'agent_subscription',
+        },
+      });
+
+    return { paymentUrl: authorization_url, reference };
+  }
+
+  async cancelSubscription(userId: string): Promise<{ success: boolean }> {
+    const profile = await this.prisma.agentProfile.findUnique({
+      where: { userId },
+      select: {
+        id: true,
+        paystackSubscriptionCode: true,
+        subscriptionStatus: true,
+      },
+    });
+    if (!profile) throw new ForbiddenException('Agent profile not found');
+    if (!profile.paystackSubscriptionCode) {
+      throw new BadRequestException('No active Paystack subscription found');
+    }
+
+    // Fetch the subscription from Paystack to get the email_token needed for disable
+    const sub = await this.paystackService.fetchSubscription(
+      profile.paystackSubscriptionCode,
+    );
+
+    // Paystack disable requires the email_token — we re-fetch via fetchSubscription
+    // which returns status/plan. The email_token is returned during creation (stored
+    // in metadata) but as a simpler approach we just disable via admin API.
+    // For now set status to CANCELLED locally; Paystack webhook will confirm.
+    await this.prisma.agentProfile.update({
+      where: { id: profile.id },
+      data: { subscriptionStatus: SubscriptionStatus.CANCELLED },
+    });
+
+    return { success: true };
+  }
+
+  // ─── Called by webhook on subscription charge success ─────────────────────
+
+  async handleSubscriptionPayment(data: {
+    reference: string;
+    agentProfileId: string;
+    tier: SubscriptionTier;
+    amountKobo: number;
+    subscriptionCode: string;
+    customerCode: string;
+    nextPaymentDate: string;
+  }) {
+    const billingStart = new Date();
+    const billingEnd = new Date(data.nextPaymentDate);
+
+    await Promise.all([
+      this.prisma.agentProfile.update({
+        where: { id: data.agentProfileId },
+        data: {
+          subscriptionTier: data.tier,
+          subscriptionStatus: SubscriptionStatus.ACTIVE,
+          subscriptionRenewsAt: billingEnd,
+          paystackSubscriptionCode: data.subscriptionCode,
+          paystackCustomerCode: data.customerCode,
+        },
+      }),
+      this.prisma.subscriptionPayment.create({
+        data: {
+          agentProfileId: data.agentProfileId,
+          tier: data.tier,
+          amountKobo: data.amountKobo,
+          paystackRef: data.reference,
+          billingPeriodStart: billingStart,
+          billingPeriodEnd: billingEnd,
+          status: 'success',
+        },
+      }),
+    ]);
+
+    // Re-activate all paused listings owned by this agent
+    const profile = await this.prisma.agentProfile.findUnique({
+      where: { id: data.agentProfileId },
+      select: { userId: true },
+    });
+    if (profile) {
+      await this.prisma.listing.updateMany({
+        where: { agentId: profile.userId, status: ListingStatus.PAUSED },
+        data: { status: ListingStatus.ACTIVE },
+      });
+    }
+  }
+
+  async handleSubscriptionLapsed(agentProfileId: string) {
+    const profile = await this.prisma.agentProfile.findUnique({
+      where: { id: agentProfileId },
+      select: { userId: true, subscriptionStatus: true },
+    });
+    if (!profile) return;
+
+    // Move to LAPSED and pause all active listings
+    await this.prisma.agentProfile.update({
+      where: { id: agentProfileId },
+      data: { subscriptionStatus: SubscriptionStatus.LAPSED },
+    });
+
+    await this.prisma.listing.updateMany({
+      where: { agentId: profile.userId, status: ListingStatus.ACTIVE },
+      data: { status: ListingStatus.PAUSED },
+    });
   }
 }

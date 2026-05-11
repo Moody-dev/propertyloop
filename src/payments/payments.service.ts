@@ -1,8 +1,18 @@
-import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  NotFoundException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { PaystackService } from './paystack.service';
-import { EscrowStatus, JobStatus } from '../../generated/prisma/client';
+import {
+  EscrowStatus,
+  JobStatus,
+  SubscriptionTier,
+  SubscriptionStatus,
+  ListingStatus,
+} from '../../generated/prisma/client';
 
 @Injectable()
 export class PaymentsService {
@@ -22,22 +32,26 @@ export class PaymentsService {
 
     if (!job) throw new NotFoundException('Job not found');
     if (job.escrowStatus !== EscrowStatus.NONE) {
-      throw new BadRequestException('Payment has already been initiated for this job');
+      throw new BadRequestException(
+        'Payment has already been initiated for this job',
+      );
     }
 
     const amountKobo = job.escrowAmount * 100;
     const reference = `PLJOB-${jobId}-${Date.now()}`;
-    const frontendUrl = this.configService.get<string>('FRONTEND_URL') || 'http://localhost:5173';
+    const frontendUrl =
+      this.configService.get<string>('FRONTEND_URL') || 'http://localhost:5173';
     const callbackUrl = `${frontendUrl}/payment-callback?jobId=${jobId}`;
 
     try {
-      const { authorization_url } = await this.paystackService.initializeTransaction({
-        email: buyerEmail,
-        amount: amountKobo,
-        reference,
-        callback_url: callbackUrl,
-        metadata: { jobId, type: 'vendor_job' },
-      });
+      const { authorization_url } =
+        await this.paystackService.initializeTransaction({
+          email: buyerEmail,
+          amount: amountKobo,
+          reference,
+          callback_url: callbackUrl,
+          metadata: { jobId, type: 'vendor_job' },
+        });
 
       // Store reference in job
       await this.prisma.vendorJob.update({
@@ -73,7 +87,9 @@ export class PaymentsService {
       // Verify payment amount with Paystack
       const txn = await this.paystackService.verifyTransaction(reference);
       if (txn.status !== 'success') {
-        console.warn(`Payment verification failed: ${txn.status} for ${reference}`);
+        console.warn(
+          `Payment verification failed: ${txn.status} for ${reference}`,
+        );
         return;
       }
 
@@ -113,7 +129,9 @@ export class PaymentsService {
       throw new BadRequestException('Only the buyer can release escrow');
     }
     if (job.status !== JobStatus.COMPLETED) {
-      throw new BadRequestException('Job must be completed before releasing escrow');
+      throw new BadRequestException(
+        'Job must be completed before releasing escrow',
+      );
     }
     if (job.escrowStatus !== EscrowStatus.LOCKED) {
       throw new BadRequestException('Escrow is not locked');
@@ -263,7 +281,8 @@ export class PaymentsService {
     if (job.escrowStatus !== EscrowStatus.DISPUTED) {
       throw new BadRequestException('Job is not in disputed state');
     }
-    if (!job.escrowId) throw new BadRequestException('No escrow reference found');
+    if (!job.escrowId)
+      throw new BadRequestException('No escrow reference found');
 
     try {
       // Call Paystack refund API
@@ -306,13 +325,14 @@ export class PaymentsService {
   }> {
     try {
       // Create transfer recipient in Paystack
-      const { recipient_code } = await this.paystackService.createTransferRecipient({
-        type: 'nuban',
-        name: dto.accountName,
-        account_number: dto.accountNumber,
-        bank_code: dto.bankCode,
-        currency: 'NGN',
-      });
+      const { recipient_code } =
+        await this.paystackService.createTransferRecipient({
+          type: 'nuban',
+          name: dto.accountName,
+          account_number: dto.accountNumber,
+          bank_code: dto.bankCode,
+          currency: 'NGN',
+        });
 
       // Upsert bank account in DB
       const bankAccount = await this.prisma.vendorBankAccount.upsert({
@@ -342,9 +362,7 @@ export class PaymentsService {
     }
   }
 
-  async getBankAccount(
-    vendorUserId: string,
-  ): Promise<{
+  async getBankAccount(vendorUserId: string): Promise<{
     id: string;
     vendorUserId: string;
     accountName: string;
@@ -375,5 +393,164 @@ export class PaymentsService {
         escrowStatus: true,
       },
     });
+  }
+
+  // ── Subscription webhook handlers ─────────────────────────────────────────
+
+  /** Fires when an agent first pays for a subscription (initial checkout) */
+  async handleSubscriptionChargeSuccess(data: any): Promise<void> {
+    const meta = data.metadata as Record<string, any>;
+    const { agentProfileId, tier } = meta;
+    if (!agentProfileId || !tier) {
+      console.warn('handleSubscriptionChargeSuccess: missing metadata', meta);
+      return;
+    }
+
+    try {
+      const subCode = data.subscription_code || data.plan?.subscription_code;
+      const customerCode = data.customer?.customer_code;
+      const nextDate = data.paid_at
+        ? new Date(
+            new Date(data.paid_at).setMonth(
+              new Date(data.paid_at).getMonth() + 1,
+            ),
+          )
+        : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+
+      await this._activateSubscription({
+        agentProfileId,
+        tier: tier as SubscriptionTier,
+        amountKobo: data.amount,
+        reference: data.reference,
+        subscriptionCode: subCode ?? null,
+        customerCode: customerCode ?? null,
+        nextPaymentDate: nextDate,
+      });
+    } catch (err: any) {
+      console.error('handleSubscriptionChargeSuccess error:', err.message);
+    }
+  }
+
+  /** Fires on recurring monthly renewal */
+  async handleSubscriptionRenewal(data: any): Promise<void> {
+    const subCode =
+      data.subscription?.subscription_code || data.subscription_code;
+    if (!subCode) return;
+
+    const profile = await this.prisma.agentProfile.findFirst({
+      where: { paystackSubscriptionCode: subCode },
+    });
+    if (!profile) {
+      console.warn(
+        'handleSubscriptionRenewal: no profile for sub code',
+        subCode,
+      );
+      return;
+    }
+
+    const nextDate = data.next_payment_date
+      ? new Date(data.next_payment_date)
+      : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+
+    await this._activateSubscription({
+      agentProfileId: profile.id,
+      tier: profile.subscriptionTier ?? SubscriptionTier.STANDARD,
+      amountKobo: data.amount ?? 0,
+      reference: data.reference ?? `renewal-${subCode}-${Date.now()}`,
+      subscriptionCode: subCode,
+      customerCode: data.customer?.customer_code ?? null,
+      nextPaymentDate: nextDate,
+    });
+  }
+
+  /** Fires when a renewal charge fails */
+  async handleSubscriptionPaymentFailed(data: any): Promise<void> {
+    const subCode =
+      data.subscription?.subscription_code || data.subscription_code;
+    if (!subCode) return;
+
+    const profile = await this.prisma.agentProfile.findFirst({
+      where: { paystackSubscriptionCode: subCode },
+    });
+    if (!profile) return;
+
+    // Move to GRACE_PERIOD — listings stay live for 3 days (enforced by a cron job)
+    await this.prisma.agentProfile.update({
+      where: { id: profile.id },
+      data: { subscriptionStatus: SubscriptionStatus.GRACE_PERIOD },
+    });
+
+    console.log(`Agent ${profile.id} entered GRACE_PERIOD after failed charge`);
+  }
+
+  /** Fires when a subscription is cancelled/disabled on Paystack side */
+  async handleSubscriptionDisabled(data: any): Promise<void> {
+    const subCode = data.subscription_code;
+    if (!subCode) return;
+
+    const profile = await this.prisma.agentProfile.findFirst({
+      where: { paystackSubscriptionCode: subCode },
+    });
+    if (!profile) return;
+
+    await this.prisma.agentProfile.update({
+      where: { id: profile.id },
+      data: { subscriptionStatus: SubscriptionStatus.CANCELLED },
+    });
+  }
+
+  private async _activateSubscription(opts: {
+    agentProfileId: string;
+    tier: SubscriptionTier;
+    amountKobo: number;
+    reference: string;
+    subscriptionCode: string | null;
+    customerCode: string | null;
+    nextPaymentDate: Date;
+  }) {
+    const existing = await this.prisma.subscriptionPayment.findUnique({
+      where: { paystackRef: opts.reference },
+    });
+    if (existing) return; // idempotent
+
+    await Promise.all([
+      this.prisma.agentProfile.update({
+        where: { id: opts.agentProfileId },
+        data: {
+          subscriptionTier: opts.tier,
+          subscriptionStatus: SubscriptionStatus.ACTIVE,
+          subscriptionRenewsAt: opts.nextPaymentDate,
+          ...(opts.subscriptionCode && {
+            paystackSubscriptionCode: opts.subscriptionCode,
+          }),
+          ...(opts.customerCode && {
+            paystackCustomerCode: opts.customerCode,
+          }),
+        },
+      }),
+      this.prisma.subscriptionPayment.create({
+        data: {
+          agentProfileId: opts.agentProfileId,
+          tier: opts.tier,
+          amountKobo: opts.amountKobo,
+          paystackRef: opts.reference,
+          billingPeriodStart: new Date(),
+          billingPeriodEnd: opts.nextPaymentDate,
+          status: 'success',
+        },
+      }),
+    ]);
+
+    // Re-activate paused listings
+    const profile = await this.prisma.agentProfile.findUnique({
+      where: { id: opts.agentProfileId },
+      select: { userId: true },
+    });
+    if (profile) {
+      await this.prisma.listing.updateMany({
+        where: { agentId: profile.userId, status: ListingStatus.PAUSED },
+        data: { status: ListingStatus.ACTIVE },
+      });
+    }
   }
 }

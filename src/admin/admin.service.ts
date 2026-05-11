@@ -269,7 +269,8 @@ export class AdminService {
     if (dto.features !== undefined) data.features = dto.features;
     if (dto.coverImage !== undefined) data.coverImage = dto.coverImage;
     if (dto.images !== undefined) data.images = dto.images;
-    if (dto.virtualTourUrl !== undefined) data.virtualTourUrl = dto.virtualTourUrl;
+    if (dto.virtualTourUrl !== undefined)
+      data.virtualTourUrl = dto.virtualTourUrl;
     if (dto.videoUrl !== undefined) data.videoUrl = dto.videoUrl;
     if (dto.status !== undefined) data.status = dto.status;
 

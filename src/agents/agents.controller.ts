@@ -61,6 +61,33 @@ export class AgentsController {
     return this.agentsService.getStats(user.id);
   }
 
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.AGENT)
+  @Get('me/subscription')
+  getSubscription(@CurrentUser() user: CurrentUserData) {
+    return this.agentsService.getSubscription(user.id);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.AGENT)
+  @Post('me/subscription/checkout')
+  initCheckout(
+    @CurrentUser() user: CurrentUserData,
+    @Body() body: { tier: 'STANDARD' | 'PRO' },
+  ) {
+    return this.agentsService.initializeSubscriptionCheckout(
+      user.id,
+      body.tier,
+    );
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.AGENT)
+  @Post('me/subscription/cancel')
+  cancelSubscription(@CurrentUser() user: CurrentUserData) {
+    return this.agentsService.cancelSubscription(user.id);
+  }
+
   // ─── Public profile + reviews ────────────────────────────────────────────
 
   @Get(':id')

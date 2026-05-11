@@ -9,6 +9,6 @@ import { AuthModule } from '../auth/auth.module';
   imports: [PrismaModule, AuthModule],
   controllers: [PaymentsController],
   providers: [PaymentsService, PaystackService],
-  exports: [PaymentsService],
+  exports: [PaymentsService, PaystackService],
 })
 export class PaymentsModule {}

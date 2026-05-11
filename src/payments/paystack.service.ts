@@ -25,8 +25,15 @@ export class PaystackService {
     reference: string;
     callback_url: string;
     metadata: Record<string, any>;
-  }): Promise<{ authorization_url: string; access_code: string; reference: string }> {
-    const response = await this.axiosInstance.post('/transaction/initialize', payload);
+  }): Promise<{
+    authorization_url: string;
+    access_code: string;
+    reference: string;
+  }> {
+    const response = await this.axiosInstance.post(
+      '/transaction/initialize',
+      payload,
+    );
     return response.data.data;
   }
 
@@ -36,7 +43,9 @@ export class PaystackService {
     reference: string;
     metadata: Record<string, any>;
   }> {
-    const response = await this.axiosInstance.get(`/transaction/verify/${reference}`);
+    const response = await this.axiosInstance.get(
+      `/transaction/verify/${reference}`,
+    );
     const { status, amount, reference: ref, metadata } = response.data.data;
     return { status, amount, reference: ref, metadata };
   }
@@ -62,7 +71,10 @@ export class PaystackService {
     bank_code: string;
     currency: 'NGN';
   }): Promise<{ recipient_code: string }> {
-    const response = await this.axiosInstance.post('/transferrecipient', payload);
+    const response = await this.axiosInstance.post(
+      '/transferrecipient',
+      payload,
+    );
     return { recipient_code: response.data.data.recipient_code };
   }
 
@@ -71,7 +83,9 @@ export class PaystackService {
     return response.data.data;
   }
 
-  async refundTransaction(transactionReference: string): Promise<{ refund_url?: string }> {
+  async refundTransaction(
+    transactionReference: string,
+  ): Promise<{ refund_url?: string }> {
     const response = await this.axiosInstance.post('/refund', {
       transaction: transactionReference,
     });
@@ -89,5 +103,87 @@ export class PaystackService {
     } catch {
       return false;
     }
+  }
+
+  // ── Subscriptions ──────────────────────────────────────────────────────────
+
+  async createCustomer(payload: {
+    email: string;
+    first_name?: string;
+    last_name?: string;
+    phone?: string;
+  }): Promise<{ customer_code: string; id: number }> {
+    const response = await this.axiosInstance.post('/customer', payload);
+    return {
+      customer_code: response.data.data.customer_code,
+      id: response.data.data.id,
+    };
+  }
+
+  async createSubscription(payload: {
+    customer: string; // customer_code or email
+    plan: string; // plan code e.g. PLN_xxxxxxxxxx
+    authorization?: string; // reuse a stored card's authorization_code
+    start_date?: string; // ISO 8601
+  }): Promise<{
+    subscription_code: string;
+    email_token: string;
+    status: string;
+  }> {
+    const response = await this.axiosInstance.post('/subscription', payload);
+    return {
+      subscription_code: response.data.data.subscription_code,
+      email_token: response.data.data.email_token,
+      status: response.data.data.status,
+    };
+  }
+
+  async disableSubscription(payload: {
+    code: string; // subscription_code
+    token: string; // email_token
+  }): Promise<{ message: string }> {
+    const response = await this.axiosInstance.post(
+      '/subscription/disable',
+      payload,
+    );
+    return { message: response.data.message };
+  }
+
+  async fetchSubscription(subscriptionCode: string): Promise<{
+    status: string;
+    next_payment_date: string;
+    plan: { plan_code: string; name: string; amount: number };
+  }> {
+    const response = await this.axiosInstance.get(
+      `/subscription/${subscriptionCode}`,
+    );
+    const d = response.data.data;
+    return {
+      status: d.status,
+      next_payment_date: d.next_payment_date,
+      plan: {
+        plan_code: d.plan.plan_code,
+        name: d.plan.name,
+        amount: d.plan.amount,
+      },
+    };
+  }
+
+  async initializeSubscriptionTransaction(payload: {
+    email: string;
+    amount: number; // kobo — must match plan amount
+    plan: string; // plan code
+    reference: string;
+    callback_url: string;
+    metadata: Record<string, any>;
+  }): Promise<{
+    authorization_url: string;
+    access_code: string;
+    reference: string;
+  }> {
+    const response = await this.axiosInstance.post('/transaction/initialize', {
+      ...payload,
+    });
+    return response.data.data;
   }
 }
