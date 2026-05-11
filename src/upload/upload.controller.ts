@@ -56,4 +56,23 @@ export class UploadController {
       mimeType: file.mimetype,
     };
   }
+
+  @Post('featured-property-image')
+  @UseInterceptors(
+    FileInterceptor('file', { limits: { fileSize: 10 * 1024 * 1024 } }),
+  )
+  async uploadFeaturedPropertyImage(@UploadedFile() file: any) {
+    if (!file) {
+      throw new BadRequestException('No file provided');
+    }
+    if (!file.mimetype.startsWith('image/')) {
+      throw new BadRequestException('File must be an image');
+    }
+    const result = await this.b2Service.uploadFile(file, 'featured-properties');
+    return {
+      url: result.fileUrl,
+      fileName: result.fileName,
+      fileId: result.fileId,
+    };
+  }
 }

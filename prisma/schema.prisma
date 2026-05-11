@@ -66,7 +66,7 @@ model FeaturedProperty {
   beds         Int      @default(0)
   baths        Int      @default(0)
   sqft         String?
-  imageUrl     String
+  imageUrls    String[]
   active       Boolean  @default(true)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt

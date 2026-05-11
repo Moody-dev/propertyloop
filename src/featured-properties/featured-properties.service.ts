@@ -10,7 +10,7 @@ export interface CreateFeaturedPropertyDto {
   beds?: number;
   baths?: number;
   sqft?: string;
-  imageUrl: string;
+  imageUrls: string[];
   active?: boolean;
 }
 
@@ -50,7 +50,7 @@ export class FeaturedPropertiesService {
         beds: dto.beds ?? 0,
         baths: dto.baths ?? 0,
         sqft: dto.sqft,
-        imageUrl: dto.imageUrl,
+        imageUrls: dto.imageUrls,
         active: dto.active ?? true,
       },
     });

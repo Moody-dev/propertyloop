@@ -8,7 +8,12 @@ import { MessagesModule } from '../messages/messages.module';
 import { FeaturedPropertiesModule } from '../featured-properties/featured-properties.module';
 
 @Module({
-  imports: [ViewingsModule, AppWaitlistModule, MessagesModule, FeaturedPropertiesModule],
+  imports: [
+    ViewingsModule,
+    AppWaitlistModule,
+    MessagesModule,
+    FeaturedPropertiesModule,
+  ],
   providers: [AdminService, PrismaService],
   controllers: [AdminController],
 })
