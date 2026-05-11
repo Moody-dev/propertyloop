@@ -16,6 +16,8 @@ import {
   ListingStatus,
   Role,
   ViewingStatus,
+  SubscriptionTier,
+  SubscriptionStatus,
 } from '../../generated/prisma/client';
 import { Response as ExpressResponse } from 'express';
 import { Response as ResDecorator } from '@nestjs/common';
@@ -26,6 +28,7 @@ import { MessagesService } from '../messages/messages.service';
 import { ConversationParticipantRole } from '../../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotFoundException } from '@nestjs/common';
+import { UpdateListingDto } from '../listings/dto/update-listing.dto';
 
 function mapUserRoleToConversationRole(
   userRole: Role,
@@ -149,6 +152,16 @@ export class AdminController {
     return this.adminService.setListingStatus(id, body.status);
   }
 
+  @Patch('listings/:id')
+  async updateListing(
+    @CurrentUser() user: any,
+    @Param('id') id: string,
+    @Body() dto: UpdateListingDto,
+  ) {
+    this.checkAdminAccess(user.role);
+    return this.adminService.adminUpdateListing(id, dto);
+  }
+
   // ─── Agents ──────────────────────────────────────────────────────────────
 
   @Get('agents')
@@ -165,7 +178,9 @@ export class AdminController {
       limit: limit ? Number(limit) : 50,
       search,
       verified:
-        verified === undefined ? undefined : verified === 'true' || verified === '1',
+        verified === undefined
+          ? undefined
+          : verified === 'true' || verified === '1',
     });
   }
 
@@ -177,6 +192,20 @@ export class AdminController {
   ) {
     this.checkAdminAccess(user.role);
     return this.adminService.setAgentVerified(id, body.verified);
+  }
+
+  @Patch('agents/:id/subscription')
+  async overrideAgentSubscription(
+    @CurrentUser() user: any,
+    @Param('id') id: string,
+    @Body() body: { tier: SubscriptionTier; status: SubscriptionStatus },
+  ) {
+    this.checkAdminAccess(user.role);
+    return this.adminService.overrideAgentSubscription(
+      id,
+      body.tier,
+      body.status,
+    );
   }
 
   // ─── Vendors ─────────────────────────────────────────────────────────────
@@ -195,7 +224,9 @@ export class AdminController {
       limit: limit ? Number(limit) : 50,
       search,
       verified:
-        verified === undefined ? undefined : verified === 'true' || verified === '1',
+        verified === undefined
+          ? undefined
+          : verified === 'true' || verified === '1',
     });
   }
 
@@ -241,10 +272,7 @@ export class AdminController {
   }
 
   @Delete('viewings/:id')
-  async deleteViewing(
-    @CurrentUser() user: any,
-    @Param('id') id: string,
-  ) {
+  async deleteViewing(@CurrentUser() user: any, @Param('id') id: string) {
     this.checkAdminAccess(user.role);
     return this.viewingsService.removeAsAdmin(id);
   }

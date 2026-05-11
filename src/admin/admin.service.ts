@@ -1,6 +1,17 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { ListingStatus, Role } from '../../generated/prisma/client';
+import {
+  ListingStatus,
+  Role,
+  SubscriptionTier,
+  SubscriptionStatus,
+  Prisma,
+} from '../../generated/prisma/client';
+import { UpdateListingDto } from '../listings/dto/update-listing.dto';
 
 @Injectable()
 export class AdminService {
@@ -76,11 +87,7 @@ export class AdminService {
     };
   }
 
-  async listOrders(options: {
-    page: number;
-    limit: number;
-    status?: string;
-  }) {
+  async listOrders(options: { page: number; limit: number; status?: string }) {
     const { page, limit, status } = options;
     const skip = (page - 1) * limit;
 
@@ -236,9 +243,52 @@ export class AdminService {
     });
   }
 
+  async adminUpdateListing(listingId: string, dto: UpdateListingDto) {
+    const listing = await this.prisma.listing.findUnique({
+      where: { id: listingId },
+      include: { agent: { include: { agentProfile: true } }, documents: true },
+    });
+    if (!listing) throw new NotFoundException('Listing not found');
+
+    const data: Prisma.ListingUpdateInput = {};
+    if (dto.title !== undefined) data.title = dto.title;
+    if (dto.type !== undefined) data.type = dto.type;
+    if (dto.propertyType !== undefined) data.propertyType = dto.propertyType;
+    if (dto.priceNaira !== undefined) {
+      data.priceNaira = dto.priceNaira;
+      data.priceLabel = `₦${dto.priceNaira.toLocaleString('en-NG')}`;
+    }
+    if (dto.period !== undefined) data.period = dto.period;
+    if (dto.address !== undefined) data.address = dto.address;
+    if (dto.location !== undefined) data.location = dto.location;
+    if (dto.beds !== undefined) data.beds = dto.beds;
+    if (dto.baths !== undefined) data.baths = dto.baths;
+    if (dto.sqft !== undefined) data.sqft = dto.sqft;
+    if (dto.yearBuilt !== undefined) data.yearBuilt = dto.yearBuilt;
+    if (dto.description !== undefined) data.description = dto.description;
+    if (dto.features !== undefined) data.features = dto.features;
+    if (dto.coverImage !== undefined) data.coverImage = dto.coverImage;
+    if (dto.images !== undefined) data.images = dto.images;
+    if (dto.virtualTourUrl !== undefined) data.virtualTourUrl = dto.virtualTourUrl;
+    if (dto.videoUrl !== undefined) data.videoUrl = dto.videoUrl;
+    if (dto.status !== undefined) data.status = dto.status;
+
+    const updated = await this.prisma.listing.update({
+      where: { id: listingId },
+      data,
+      include: { agent: { include: { agentProfile: true } }, documents: true },
+    });
+    return updated;
+  }
+
   // ─── Agents ──────────────────────────────────────────────────────────────
 
-  async listAgents(options: { page: number; limit: number; search?: string; verified?: boolean }) {
+  async listAgents(options: {
+    page: number;
+    limit: number;
+    search?: string;
+    verified?: boolean;
+  }) {
     const { page, limit, search, verified } = options;
     const skip = (page - 1) * limit;
 
@@ -287,9 +337,48 @@ export class AdminService {
     });
   }
 
+  async overrideAgentSubscription(
+    userId: string,
+    tier: SubscriptionTier,
+    status: SubscriptionStatus,
+  ) {
+    const profile = await this.prisma.agentProfile.findUnique({
+      where: { userId },
+    });
+    if (!profile) throw new NotFoundException('Agent profile not found');
+
+    const updated = await this.prisma.agentProfile.update({
+      where: { userId },
+      data: { subscriptionTier: tier, subscriptionStatus: status },
+    });
+
+    // If setting to LAPSED, pause all their active listings
+    if (status === SubscriptionStatus.LAPSED) {
+      await this.prisma.listing.updateMany({
+        where: { agentId: userId, status: ListingStatus.ACTIVE },
+        data: { status: ListingStatus.PAUSED },
+      });
+    }
+
+    // If setting back to ACTIVE, restore paused listings
+    if (status === SubscriptionStatus.ACTIVE) {
+      await this.prisma.listing.updateMany({
+        where: { agentId: userId, status: ListingStatus.PAUSED },
+        data: { status: ListingStatus.ACTIVE },
+      });
+    }
+
+    return updated;
+  }
+
   // ─── Vendors ─────────────────────────────────────────────────────────────
 
-  async listVendors(options: { page: number; limit: number; search?: string; verified?: boolean }) {
+  async listVendors(options: {
+    page: number;
+    limit: number;
+    search?: string;
+    verified?: boolean;
+  }) {
     const { page, limit, search, verified } = options;
     const skip = (page - 1) * limit;
 
