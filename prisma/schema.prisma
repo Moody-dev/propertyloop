@@ -52,6 +52,29 @@ model WaitlistEntry {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Featured / Ad properties — admin-curated listings shown on the waitlist hero
+// ─────────────────────────────────────────────────────────────────────────────
+
+model FeaturedProperty {
+  id           String   @id @default(cuid())
+  title        String
+  location     String
+  priceNaira   BigInt
+  priceLabel   String
+  type         String   // SALE | RENT | SHORTLET
+  propertyType String
+  beds         Int      @default(0)
+  baths        Int      @default(0)
+  sqft         String?
+  imageUrl     String
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([active, createdAt])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Enums for the auth & core domain
 // ─────────────────────────────────────────────────────────────────────────────
 

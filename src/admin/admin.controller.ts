@@ -29,6 +29,11 @@ import { ConversationParticipantRole } from '../../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotFoundException } from '@nestjs/common';
 import { UpdateListingDto } from '../listings/dto/update-listing.dto';
+import {
+  FeaturedPropertiesService,
+  CreateFeaturedPropertyDto,
+  UpdateFeaturedPropertyDto,
+} from '../featured-properties/featured-properties.service';
 
 function mapUserRoleToConversationRole(
   userRole: Role,
@@ -54,6 +59,7 @@ export class AdminController {
     private readonly appWaitlistService: AppWaitlistService,
     private readonly messagesService: MessagesService,
     private readonly prisma: PrismaService,
+    private readonly featuredPropertiesService: FeaturedPropertiesService,
   ) {}
 
   private checkAdminAccess(role: Role) {
@@ -364,5 +370,41 @@ export class AdminController {
       listingId,
       text: body.text?.trim() || undefined,
     });
+  }
+
+  // ─── Featured / Ad Properties ─────────────────────────────────────────────
+
+  @Get('featured-properties')
+  async listFeaturedProperties(@CurrentUser() user: any) {
+    this.checkAdminAccess(user.role);
+    return this.featuredPropertiesService.listAll();
+  }
+
+  @Post('featured-properties')
+  async createFeaturedProperty(
+    @CurrentUser() user: any,
+    @Body() dto: CreateFeaturedPropertyDto,
+  ) {
+    this.checkAdminAccess(user.role);
+    return this.featuredPropertiesService.create(dto);
+  }
+
+  @Patch('featured-properties/:id')
+  async updateFeaturedProperty(
+    @CurrentUser() user: any,
+    @Param('id') id: string,
+    @Body() dto: UpdateFeaturedPropertyDto,
+  ) {
+    this.checkAdminAccess(user.role);
+    return this.featuredPropertiesService.update(id, dto);
+  }
+
+  @Delete('featured-properties/:id')
+  async deleteFeaturedProperty(
+    @CurrentUser() user: any,
+    @Param('id') id: string,
+  ) {
+    this.checkAdminAccess(user.role);
+    return this.featuredPropertiesService.remove(id);
   }
 }

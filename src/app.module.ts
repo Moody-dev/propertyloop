@@ -29,6 +29,7 @@ import { UploadModule } from './upload/upload.module';
 import { ReportsModule } from './reports/reports.module';
 import { AppWaitlistModule } from './app-waitlist/app-waitlist.module';
 import { ValuationsModule } from './valuations/valuations.module';
+import { FeaturedPropertiesModule } from './featured-properties/featured-properties.module';
 
 @Module({
   imports: [
@@ -64,6 +65,7 @@ import { ValuationsModule } from './valuations/valuations.module';
     ReportsModule,
     AppWaitlistModule,
     ValuationsModule,
+    FeaturedPropertiesModule,
   ],
   controllers: [AppController],
   providers: [AppService, { provide: APP_GUARD, useClass: ThrottlerGuard }],
