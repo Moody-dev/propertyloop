@@ -5,6 +5,7 @@ export interface CreateFeaturedPropertyDto {
   title: string;
   location: string;
   priceNaira: number;
+  priceLabel?: string;
   type: string;
   propertyType: string;
   beds?: number;
@@ -38,7 +39,9 @@ export class FeaturedPropertiesService {
   }
 
   async create(dto: CreateFeaturedPropertyDto) {
-    const priceLabel = `₦${Number(dto.priceNaira).toLocaleString('en-NG')}`;
+    const priceLabel =
+      dto.priceLabel?.trim() ||
+      `₦${Number(dto.priceNaira).toLocaleString('en-NG')}`;
     const item = await this.prisma.featuredProperty.create({
       data: {
         title: dto.title,
@@ -64,7 +67,7 @@ export class FeaturedPropertiesService {
     if (!existing) throw new NotFoundException('Featured property not found');
 
     const data: any = { ...dto };
-    if (dto.priceNaira !== undefined) {
+    if (dto.priceNaira !== undefined && !dto.priceLabel?.trim()) {
       data.priceLabel = `₦${Number(dto.priceNaira).toLocaleString('en-NG')}`;
     }
 
