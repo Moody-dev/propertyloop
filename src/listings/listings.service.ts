@@ -195,6 +195,7 @@ export class ListingsService {
           images: dto.images,
           virtualTourUrl: dto.virtualTourUrl,
           videoUrl: dto.videoUrl,
+          videoUrls: dto.videoUrls ?? [],
           status: ListingStatus.ACTIVE,
         },
         include: { documents: true },
@@ -281,6 +282,7 @@ export class ListingsService {
     if (dto.images !== undefined) data.images = dto.images;
     if (dto.virtualTourUrl !== undefined) data.virtualTourUrl = dto.virtualTourUrl;
     if (dto.videoUrl !== undefined) data.videoUrl = dto.videoUrl;
+    if (dto.videoUrls !== undefined) data.videoUrls = dto.videoUrls;
     if (dto.status !== undefined) {
       data.status = dto.status;
       // If marked sold/rented, bump agent's deal counter
@@ -530,6 +532,7 @@ export class ListingsService {
       images: listing.images,
       virtualTourUrl: listing.virtualTourUrl,
       videoUrl: listing.videoUrl,
+      videoUrls: listing.videoUrls ?? [],
       rating: listing.rating,
       verified: listing.verified,
       status: listing.status,

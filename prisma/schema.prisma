@@ -526,6 +526,7 @@ model Listing {
   // Video tour fields (matches data/videos.ts VideoListing interface)
   virtualTourUrl String? // YouTube embed URL
   videoUrl       String? // Property video URL (upload or external)
+  videoUrls      String[] // Multiple video URLs
   videoThumbnail String? // Thumbnail image for video card
   videoDuration  String? // e.g. "2:34"
   videoViewCount Int     @default(0)

@@ -97,4 +97,10 @@ export class CreateListingDto {
   @IsUrl()
   @IsOptional()
   videoUrl?: string;
+
+  @IsArray()
+  @IsOptional()
+  @IsUrl({}, { each: true })
+  @ArrayMaxSize(10)
+  videoUrls?: string[];
 }
