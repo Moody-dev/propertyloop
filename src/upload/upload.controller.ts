@@ -97,4 +97,26 @@ export class UploadController {
       fileId: result.fileId,
     };
   }
+
+  @Post('message-attachment')
+  @UseInterceptors(
+    FileInterceptor('file', { limits: { fileSize: 20 * 1024 * 1024 } }),
+  )
+  async uploadMessageAttachment(@UploadedFile() file: any) {
+    if (!file) {
+      throw new BadRequestException('No file provided');
+    }
+    const isImage = file.mimetype.startsWith('image/');
+    const isPdf = file.mimetype === 'application/pdf';
+    if (!isImage && !isPdf) {
+      throw new BadRequestException('File must be an image or PDF');
+    }
+    const result = await this.b2Service.uploadFile(file, 'message-attachments');
+    return {
+      url: result.fileUrl,
+      fileName: result.fileName,
+      fileId: result.fileId,
+      mimeType: file.mimetype,
+    };
+  }
 }

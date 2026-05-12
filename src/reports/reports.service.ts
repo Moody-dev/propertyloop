@@ -46,6 +46,13 @@ export class ReportsService {
     return { items, total, page, limit, pages: Math.ceil(total / limit) };
   }
 
+  async listMine(userId: string) {
+    return this.prisma.report.findMany({
+      where: { reporterId: userId },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
   async update(id: string, dto: UpdateReportDto) {
     const report = await this.prisma.report.findUnique({ where: { id } });
     if (!report) throw new NotFoundException('Report not found');

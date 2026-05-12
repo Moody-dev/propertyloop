@@ -106,16 +106,16 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @SubscribeMessage('send_message')
   async handleSendMessage(
     @ConnectedSocket() client: Socket,
-    @MessageBody() body: { conversationId: string; text: string },
+    @MessageBody() body: { conversationId: string; text?: string; attachmentUrls?: string[] },
   ) {
     const userId = client.data?.userId;
-    if (!userId || !body.conversationId || !body.text?.trim()) return;
+    if (!userId || !body.conversationId || (!body.text?.trim() && !body.attachmentUrls?.length)) return;
 
     try {
       const message = await this.messagesService.sendMessage(
         userId,
         body.conversationId,
-        { text: body.text.trim() },
+        { text: body.text?.trim() ?? '', attachmentUrls: body.attachmentUrls },
       );
 
       // Broadcast to all participants in this conversation (including sender's other tabs)

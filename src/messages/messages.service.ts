@@ -120,6 +120,7 @@ export class MessagesService {
       senderAvatar: m.sender.avatarUrl,
       isYou: m.senderUserId === userId,
       text: m.text,
+      attachmentUrls: m.attachmentUrls,
       createdAt: m.createdAt.toISOString(),
     }));
   }
@@ -129,11 +130,16 @@ export class MessagesService {
   async sendMessage(userId: string, conversationId: string, dto: SendMessageDto) {
     await this.assertParticipant(userId, conversationId);
 
+    if (!dto.text?.trim() && !dto.attachmentUrls?.length) {
+      throw new BadRequestException('Message must have text or attachments');
+    }
+
     const message = await this.prisma.message.create({
       data: {
         conversationId,
         senderUserId: userId,
-        text: dto.text,
+        text: dto.text ?? '',
+        attachmentUrls: dto.attachmentUrls ?? [],
       },
       include: {
         sender: { select: { id: true, name: true, avatarUrl: true } },
@@ -160,6 +166,7 @@ export class MessagesService {
       senderAvatar: message.sender.avatarUrl,
       isYou: true,
       text: message.text,
+      attachmentUrls: message.attachmentUrls,
       createdAt: message.createdAt.toISOString(),
     };
   }

@@ -36,6 +36,13 @@ export class ReportsController {
     return this.reportsService.create(dto, user?.id);
   }
 
+  /** List the current user's own reports */
+  @UseGuards(JwtAuthGuard)
+  @Get('mine')
+  listMine(@CurrentUser() user: CurrentUserData) {
+    return this.reportsService.listMine(user.id);
+  }
+
   /** List all reports — admin only */
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.ADMIN)
