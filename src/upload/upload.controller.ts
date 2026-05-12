@@ -75,4 +75,26 @@ export class UploadController {
       fileId: result.fileId,
     };
   }
+
+  @Post('featured-property-video')
+  @UseInterceptors(
+    FileInterceptor('file', { limits: { fileSize: 200 * 1024 * 1024 } }),
+  )
+  async uploadFeaturedPropertyVideo(@UploadedFile() file: any) {
+    if (!file) {
+      throw new BadRequestException('No file provided');
+    }
+    if (!file.mimetype.startsWith('video/')) {
+      throw new BadRequestException('File must be a video');
+    }
+    const result = await this.b2Service.uploadFile(
+      file,
+      'featured-properties-videos',
+    );
+    return {
+      url: result.fileUrl,
+      fileName: result.fileName,
+      fileId: result.fileId,
+    };
+  }
 }
