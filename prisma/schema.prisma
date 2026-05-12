@@ -69,6 +69,7 @@ model FeaturedProperty {
   description  String?
   imageUrls    String[]
   videoUrl     String?
+  videoUrls    String[]
   displayOrder Int      @default(0)
   active       Boolean  @default(true)
   createdAt    DateTime @default(now())

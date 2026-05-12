@@ -14,6 +14,7 @@ export interface CreateFeaturedPropertyDto {
   description?: string;
   imageUrls: string[];
   videoUrl?: string;
+  videoUrls?: string[];
   displayOrder?: number;
   active?: boolean;
 }
@@ -59,6 +60,7 @@ export class FeaturedPropertiesService {
         description: dto.description,
         imageUrls: dto.imageUrls,
         videoUrl: dto.videoUrl,
+        videoUrls: dto.videoUrls ?? [],
         displayOrder: dto.displayOrder ?? 0,
         active: dto.active ?? true,
       },
