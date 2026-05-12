@@ -14,6 +14,7 @@ export interface CreateFeaturedPropertyDto {
   description?: string;
   imageUrls: string[];
   videoUrl?: string;
+  displayOrder?: number;
   active?: boolean;
 }
 
@@ -27,7 +28,7 @@ export class FeaturedPropertiesService {
   async listActive() {
     const items = await this.prisma.featuredProperty.findMany({
       where: { active: true },
-      orderBy: { createdAt: 'desc' },
+      orderBy: [{ displayOrder: 'asc' }, { createdAt: 'desc' }],
     });
     return items.map((p) => this.serialize(p));
   }
@@ -35,7 +36,7 @@ export class FeaturedPropertiesService {
   /** Admin: all properties regardless of active flag */
   async listAll() {
     const items = await this.prisma.featuredProperty.findMany({
-      orderBy: { createdAt: 'desc' },
+      orderBy: [{ displayOrder: 'asc' }, { createdAt: 'desc' }],
     });
     return items.map((p) => this.serialize(p));
   }
@@ -58,6 +59,7 @@ export class FeaturedPropertiesService {
         description: dto.description,
         imageUrls: dto.imageUrls,
         videoUrl: dto.videoUrl,
+        displayOrder: dto.displayOrder ?? 0,
         active: dto.active ?? true,
       },
     });

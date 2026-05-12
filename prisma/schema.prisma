@@ -69,11 +69,12 @@ model FeaturedProperty {
   description  String?
   imageUrls    String[]
   videoUrl     String?
+  displayOrder Int      @default(0)
   active       Boolean  @default(true)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  @@index([active, createdAt])
+  @@index([active, displayOrder, createdAt])
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
