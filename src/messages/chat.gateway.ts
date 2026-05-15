@@ -214,18 +214,35 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       attachmentUrls: string[];
       createdAt: string;
     },
+    mask?: {
+      senderIsAdmin: boolean;
+      maskedName: string;
+      maskedAvatar: string;
+    },
   ) {
     const participants = await this.prisma.conversationParticipant.findMany({
       where: { conversationId },
-      select: { userId: true, unreadCount: true },
+      select: {
+        userId: true,
+        unreadCount: true,
+        user: { select: { role: true } },
+      },
     });
 
     for (const p of participants) {
+      const isSender = p.userId === message.senderUserId;
+      const recipientIsAdmin = p.user?.role === 'ADMIN';
+      // Mask admin sender's identity for non-admin recipients.
+      const applyMask = !!mask?.senderIsAdmin && !isSender && !recipientIsAdmin;
+
       this.server.to(`user:${p.userId}`).emit('new_message', {
         ...message,
-        isYou: p.userId === message.senderUserId,
+        senderName: applyMask ? mask!.maskedName : message.senderName,
+        senderAvatar: applyMask ? mask!.maskedAvatar : message.senderAvatar,
+        isYou: isSender,
       });
-      if (p.userId !== message.senderUserId) {
+
+      if (!isSender) {
         this.server.to(`user:${p.userId}`).emit('unread_update', {
           conversationId,
           unread: p.unreadCount,

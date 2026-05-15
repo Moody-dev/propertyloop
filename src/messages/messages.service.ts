@@ -13,6 +13,13 @@ import { SendMessageDto } from './dto/send-message.dto';
 import { ListConversationsDto, ListMessagesDto } from './dto/list-conversations.dto';
 import { ChatGateway } from './chat.gateway';
 
+// Admin identities are masked behind the PropertyLoop brand when shown to
+// non-admin users so support/system messages appear to come from the
+// company, not from an individual staff member.
+const PROPERTYLOOP_NAME = 'PropertyLoop';
+const PROPERTYLOOP_AVATAR =
+  'https://image2url.com/r2/default/images/1774405533651-13ef5a22-bfcb-4d8e-801e-563f4451c8b0.png';
+
 @Injectable()
 export class MessagesService {
   constructor(
@@ -66,14 +73,19 @@ export class MessagesService {
     const items = conversations.map((c) => {
       const other = c.participants.find((p) => p.userId !== userId);
       const lastMsg = c.messages[0];
+      const otherIsAdmin = other?.role === 'ADMIN';
       return {
         id: c.id,
         listingId: c.listingId,
         productId: c.productId,
-        // The other person's info
-        name: other?.user.name || 'Unknown',
-        avatar: other?.user.avatarUrl || null,
-        phone: other?.user.phone || null,
+        // The other person's info — admins are shown as PropertyLoop
+        name: otherIsAdmin
+          ? PROPERTYLOOP_NAME
+          : other?.user.name || 'Unknown',
+        avatar: otherIsAdmin
+          ? PROPERTYLOOP_AVATAR
+          : other?.user.avatarUrl || null,
+        phone: otherIsAdmin ? null : other?.user.phone || null,
         role: other?.role || 'BUYER',
         otherUserId: other?.userId || null,
         // Last message preview
@@ -107,7 +119,7 @@ export class MessagesService {
       take: limit,
       include: {
         sender: {
-          select: { id: true, name: true, avatarUrl: true },
+          select: { id: true, name: true, avatarUrl: true, role: true },
         },
       },
     });
@@ -118,18 +130,29 @@ export class MessagesService {
       data: { unreadCount: 0 },
     });
 
-    // Return in chronological order
-    return messages.reverse().map((m) => ({
-      id: m.id,
-      conversationId: m.conversationId,
-      senderUserId: m.senderUserId,
-      senderName: m.sender.name,
-      senderAvatar: m.sender.avatarUrl,
-      isYou: m.senderUserId === userId,
-      text: m.text,
-      attachmentUrls: m.attachmentUrls,
-      createdAt: m.createdAt.toISOString(),
-    }));
+    // Resolve the viewer's role so we know whether to mask admin senders.
+    // Admins themselves should see real names; everyone else sees PropertyLoop.
+    const viewer = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { role: true },
+    });
+    const viewerIsAdmin = viewer?.role === 'ADMIN';
+
+    return messages.reverse().map((m) => {
+      const senderIsAdmin = m.sender.role === 'ADMIN';
+      const mask = senderIsAdmin && !viewerIsAdmin;
+      return {
+        id: m.id,
+        conversationId: m.conversationId,
+        senderUserId: m.senderUserId,
+        senderName: mask ? PROPERTYLOOP_NAME : m.sender.name,
+        senderAvatar: mask ? PROPERTYLOOP_AVATAR : m.sender.avatarUrl,
+        isYou: m.senderUserId === userId,
+        text: m.text,
+        attachmentUrls: m.attachmentUrls,
+        createdAt: m.createdAt.toISOString(),
+      };
+    });
   }
 
   // ─── Send a message ──────────────────────────────────────────────────────
@@ -149,7 +172,7 @@ export class MessagesService {
         attachmentUrls: dto.attachmentUrls ?? [],
       },
       include: {
-        sender: { select: { id: true, name: true, avatarUrl: true } },
+        sender: { select: { id: true, name: true, avatarUrl: true, role: true } },
       },
     });
 
@@ -165,6 +188,8 @@ export class MessagesService {
       data: { unreadCount: { increment: 1 } },
     });
 
+    const senderIsAdmin = message.sender.role === 'ADMIN';
+
     const payload = {
       id: message.id,
       conversationId: message.conversationId,
@@ -176,7 +201,11 @@ export class MessagesService {
       createdAt: message.createdAt.toISOString(),
     };
 
-    await this.chatGateway.broadcastNewMessage(conversationId, payload);
+    await this.chatGateway.broadcastNewMessage(conversationId, payload, {
+      senderIsAdmin,
+      maskedName: PROPERTYLOOP_NAME,
+      maskedAvatar: PROPERTYLOOP_AVATAR,
+    });
 
     return { ...payload, isYou: true };
   }
