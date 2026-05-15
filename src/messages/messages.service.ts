@@ -1,6 +1,8 @@
 import {
   BadRequestException,
   ForbiddenException,
+  forwardRef,
+  Inject,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -9,10 +11,15 @@ import { Prisma } from '../../generated/prisma/client';
 import { CreateConversationDto } from './dto/create-conversation.dto';
 import { SendMessageDto } from './dto/send-message.dto';
 import { ListConversationsDto, ListMessagesDto } from './dto/list-conversations.dto';
+import { ChatGateway } from './chat.gateway';
 
 @Injectable()
 export class MessagesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Inject(forwardRef(() => ChatGateway))
+    private readonly chatGateway: ChatGateway,
+  ) {}
 
   // ─── List conversations for the current user ────────────────────────────
 
@@ -158,17 +165,20 @@ export class MessagesService {
       data: { unreadCount: { increment: 1 } },
     });
 
-    return {
+    const payload = {
       id: message.id,
       conversationId: message.conversationId,
       senderUserId: message.senderUserId,
       senderName: message.sender.name,
       senderAvatar: message.sender.avatarUrl,
-      isYou: true,
       text: message.text,
       attachmentUrls: message.attachmentUrls,
       createdAt: message.createdAt.toISOString(),
     };
+
+    await this.chatGateway.broadcastNewMessage(conversationId, payload);
+
+    return { ...payload, isYou: true };
   }
 
   // ─── Start or find a conversation ────────────────────────────────────────
@@ -228,6 +238,14 @@ export class MessagesService {
         },
       },
     });
+
+    // Notify all participants' connected sockets about the new conversation
+    // so their UIs prepend it to the list and future per-conversation events
+    // (typing, etc.) reach them without requiring a refresh.
+    await this.chatGateway.notifyConversationCreated(conversation.id, [
+      userId,
+      dto.recipientId,
+    ]);
 
     // Send the first message if provided
     if (dto.text) {

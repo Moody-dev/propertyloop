@@ -118,26 +118,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         { text: body.text?.trim() ?? '', attachmentUrls: body.attachmentUrls },
       );
 
-      // Broadcast to all participants in this conversation (including sender's other tabs)
-      this.server
-        .to(`convo:${body.conversationId}`)
-        .emit('new_message', message);
-
-      // Also emit unread update to other participants
-      const participants =
-        await this.prisma.conversationParticipant.findMany({
-          where: {
-            conversationId: body.conversationId,
-            userId: { not: userId },
-          },
-          select: { userId: true, unreadCount: true },
-        });
-      for (const p of participants) {
-        this.server.to(`user:${p.userId}`).emit('unread_update', {
-          conversationId: body.conversationId,
-          unread: p.unreadCount,
-        });
-      }
+      await this.broadcastNewMessage(body.conversationId, message);
     } catch (err) {
       client.emit('error', {
         event: 'send_message',
@@ -207,6 +188,73 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     client.emit('conversation_read', {
       conversationId: body.conversationId,
     });
+  }
+
+  // ─── Public broadcast API (called from MessagesService) ───────────────
+
+  /**
+   * Emit `new_message` to every participant of the conversation via their
+   * personal `user:<id>` room. Personal rooms are always joined at socket
+   * connection, so this works even for conversations that were created
+   * AFTER the recipient's socket connected (the case that broke admin →
+   * user delivery). Per-recipient `isYou` is computed so the receiving UI
+   * increments unread correctly.
+   */
+  async broadcastNewMessage(
+    conversationId: string,
+    message: {
+      id: string;
+      conversationId: string;
+      senderUserId: string;
+      senderName: string;
+      senderAvatar: string | null;
+      text: string;
+      attachmentUrls: string[];
+      createdAt: string;
+    },
+  ) {
+    const participants = await this.prisma.conversationParticipant.findMany({
+      where: { conversationId },
+      select: { userId: true, unreadCount: true },
+    });
+
+    for (const p of participants) {
+      this.server.to(`user:${p.userId}`).emit('new_message', {
+        ...message,
+        isYou: p.userId === message.senderUserId,
+      });
+      if (p.userId !== message.senderUserId) {
+        this.server.to(`user:${p.userId}`).emit('unread_update', {
+          conversationId,
+          unread: p.unreadCount,
+        });
+      }
+    }
+  }
+
+  /**
+   * Called after a new conversation is created. Joins every currently-
+   * connected participant's sockets to the new `convo:<id>` room so
+   * future typing/read events work, and emits `new_conversation` to each
+   * participant's personal room so their UI can prepend the convo to the
+   * list without a refresh.
+   */
+  async notifyConversationCreated(
+    conversationId: string,
+    participantIds: string[],
+  ) {
+    for (const userId of participantIds) {
+      const socketIds = this.userSockets.get(userId);
+      if (socketIds) {
+        for (const sid of socketIds) {
+          const sock = this.server.sockets.sockets.get(sid);
+          sock?.join(`convo:${conversationId}`);
+        }
+      }
+      this.server
+        .to(`user:${userId}`)
+        .emit('new_conversation', { conversationId });
+    }
   }
 
   // ─── Helpers ──────────────────────────────────────────────────────────
