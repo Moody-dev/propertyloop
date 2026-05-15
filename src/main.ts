@@ -17,12 +17,6 @@ import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 };
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule, { rawBody: true });
-  app.use(json({ limit: '100mb' }));
-  app.use(urlencoded({ limit: '100mb', extended: true }));
-  app.use(helmet());
-  app.use(compression());
-
   const prodOrigins = [
     'https://propertyloopmain.netlify.app',
     'https://property-loop.netlify.app',
@@ -40,7 +34,19 @@ async function bootstrap() {
           ...prodOrigins,
         ];
 
-  app.enableCors({ origin: origins, credentials: true });
+  // CORS must be configured at app creation so the preflight handler is
+  // registered before helmet/compression/body-parser. Registering enableCors
+  // after these middlewares meant the multipart upload preflight was being
+  // intercepted (or stripped) before CORS could add Access-Control-Allow-Origin.
+  const app = await NestFactory.create(AppModule, {
+    rawBody: true,
+    cors: { origin: origins, credentials: true },
+  });
+  app.use(json({ limit: '100mb' }));
+  app.use(urlencoded({ limit: '100mb', extended: true }));
+  app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
+  app.use(compression());
+
   app.setGlobalPrefix('api');
   app.useGlobalFilters(new AllExceptionsFilter());
   app.useGlobalPipes(
