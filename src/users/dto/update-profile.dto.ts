@@ -1,4 +1,5 @@
 import { IsOptional, IsString, MaxLength } from 'class-validator';
+import { NormalizePhone } from '../../common/phone';
 
 export class UpdateProfileDto {
   @IsString()
@@ -6,6 +7,7 @@ export class UpdateProfileDto {
   @MaxLength(120)
   name?: string;
 
+  @NormalizePhone()
   @IsString()
   @IsOptional()
   @MaxLength(40)

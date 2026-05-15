@@ -10,6 +10,7 @@ import {
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { Role } from '../../../generated/prisma/client';
+import { NormalizePhone } from '../../common/phone';
 
 export class BuyerSignupDataDto {
   @IsString()
@@ -62,6 +63,7 @@ export class SignupDto {
   })
   password: string;
 
+  @NormalizePhone()
   @IsString()
   @IsOptional()
   phone?: string;

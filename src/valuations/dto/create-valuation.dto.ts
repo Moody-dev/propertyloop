@@ -8,6 +8,7 @@ import {
   MaxLength,
   Min,
 } from 'class-validator';
+import { NormalizePhone } from '../../common/phone';
 
 export class CreateValuationDto {
   @IsString()
@@ -42,6 +43,7 @@ export class CreateValuationDto {
   @MaxLength(120)
   fullName: string;
 
+  @NormalizePhone()
   @IsString()
   @IsNotEmpty()
   @MaxLength(40)

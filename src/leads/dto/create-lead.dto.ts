@@ -7,6 +7,7 @@ import {
   MaxLength,
 } from 'class-validator';
 import { LeadSource } from '../../../generated/prisma/client';
+import { NormalizePhone } from '../../common/phone';
 
 export class CreateLeadDto {
   @IsString()
@@ -22,6 +23,7 @@ export class CreateLeadDto {
   @IsOptional()
   email?: string;
 
+  @NormalizePhone()
   @IsString()
   @IsNotEmpty()
   @MaxLength(40)

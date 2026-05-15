@@ -1,5 +1,6 @@
 import { IsEmail, IsNotEmpty, IsOptional, IsString, IsEnum } from "class-validator";
 import { UserType } from "../../../generated/prisma/client";
+import { NormalizePhone } from "../../common/phone";
 
 export class CreateWaitlistDto {
   @IsString()
@@ -18,6 +19,7 @@ export class CreateWaitlistDto {
   @IsOptional()
   location?: string;
 
+  @NormalizePhone()
   @IsString()
   @IsNotEmpty()
   phone: string;
