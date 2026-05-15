@@ -27,6 +27,9 @@ export class ListingsService {
 
     const where: Prisma.ListingWhereInput = {
       status: dto.status ?? ListingStatus.ACTIVE,
+      // Hide listings owned by suspended or deleted agents — once an admin
+      // pulls an agent off the platform, their inventory disappears too.
+      agent: { isActive: true, deletedAt: null },
     };
 
     if (dto.type) where.type = dto.type;
@@ -97,6 +100,9 @@ export class ListingsService {
       },
     });
     if (!listing) throw new NotFoundException('Listing not found');
+    if (!listing.agent.isActive || listing.agent.deletedAt) {
+      throw new NotFoundException('Listing not found');
+    }
 
     if (opts.incrementView && listing.status === ListingStatus.ACTIVE) {
       // Fire and forget — don't block response
@@ -120,6 +126,9 @@ export class ListingsService {
       },
     });
     if (!listing) throw new NotFoundException('Listing not found');
+    if (!listing.agent.isActive || listing.agent.deletedAt) {
+      throw new NotFoundException('Listing not found');
+    }
     return this.serialize(listing);
   }
 
