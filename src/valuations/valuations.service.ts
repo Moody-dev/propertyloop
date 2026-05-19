@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { MailService } from '../mail/mail.service';
 import { CreateValuationDto } from './dto/create-valuation.dto';
 
-const SUPPORT_EMAIL = 'support@propertyloop.ng';
+const SUPPORT_EMAIL = 'support.propertyloop@propertyloop.ng';
 const LOGO_URL =
   'https://image2url.com/r2/default/images/1774405533651-13ef5a22-bfcb-4d8e-801e-563f4451c8b0.png';
 

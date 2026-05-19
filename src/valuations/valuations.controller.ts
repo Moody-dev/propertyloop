@@ -8,7 +8,7 @@ export class ValuationsController {
 
   /**
    * Public endpoint — anyone visiting the Sell page can submit. The
-   * request is forwarded to support@propertyloop.ng with the requester's
+   * request is forwarded to support.propertyloop@propertyloop.ng with the requester's
    * email set as Reply-To so a single reply goes straight to the homeowner.
    */
   @Post()

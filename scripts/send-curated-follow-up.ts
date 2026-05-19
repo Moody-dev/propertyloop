@@ -425,7 +425,7 @@ function emailHtml(opts: {
 
           <p class="closing" style="margin-top:16px;">
             Questions? Reply to this email or write to
-            <a href="mailto:support@propertyloop.ng" style="color:#4ade80;text-decoration:none;font-weight:600;">support@propertyloop.ng</a>.
+            <a href="mailto:support.propertyloop@propertyloop.ng" style="color:#4ade80;text-decoration:none;font-weight:600;">support.propertyloop@propertyloop.ng</a>.
           </p>
 
           <div class="signature">
@@ -479,7 +479,7 @@ function plainText(opts: {
     lines.push('');
   }
 
-  lines.push('Questions? support@propertyloop.ng');
+  lines.push('Questions? support.propertyloop@propertyloop.ng');
   lines.push('');
   lines.push('— PropertyLoop');
   return lines.join('\n');

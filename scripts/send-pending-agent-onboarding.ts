@@ -135,7 +135,7 @@ function emailHtml(opts: { firstName: string; inviteUrl: string }) {
         </tr>
         <tr>
           <td style="padding:0 36px 32px;text-align:center;">
-            <p style="margin:0;font-size:12px;color:#6b7d72;">Need help? Reach us at <a href="mailto:support@propertyloop.ng" style="color:#1f6f43;">support@propertyloop.ng</a></p>
+            <p style="margin:0;font-size:12px;color:#6b7d72;">Need help? Reach us at <a href="mailto:support.propertyloop@propertyloop.ng" style="color:#1f6f43;">support.propertyloop@propertyloop.ng</a></p>
           </td>
         </tr>
       </table>
@@ -158,7 +158,7 @@ function plainText(opts: { firstName: string; inviteUrl: string }) {
     '',
     'This invite is unique to you and expires in 90 days.',
     '',
-    'Need help? support@propertyloop.ng',
+    'Need help? support.propertyloop@propertyloop.ng',
     '',
     '— PropertyLoop',
   ].join('\n');
