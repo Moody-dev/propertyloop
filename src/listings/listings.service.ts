@@ -9,7 +9,10 @@ import {
   Prisma,
   Role,
   SubscriptionStatus,
+  SubscriptionTier,
 } from '../../generated/prisma/client';
+
+const STANDARD_LISTING_CAP = 10;
 import { CreateListingDto } from './dto/create-listing.dto';
 import { UpdateListingDto } from './dto/update-listing.dto';
 import { ListListingsDto } from './dto/list-listings.dto';
@@ -200,6 +203,20 @@ export class ListingsService {
         throw new ForbiddenException(
           'An active subscription is required to create listings. Please subscribe or renew to continue.',
         );
+      }
+
+      // STANDARD tier is capped at 10 active listings. FOUNDING + PRO are
+      // unlimited. Pre-paused listings (LAPSED/expired) don't count toward
+      // the cap because they're not consuming buyer-facing inventory.
+      if (agent.agentProfile.subscriptionTier === SubscriptionTier.STANDARD) {
+        const activeCount = await this.prisma.listing.count({
+          where: { agentId, status: ListingStatus.ACTIVE },
+        });
+        if (activeCount >= STANDARD_LISTING_CAP) {
+          throw new ForbiddenException(
+            `The Standard plan is limited to ${STANDARD_LISTING_CAP} active listings. Upgrade to Pro for unlimited listings, or pause an existing one to make room.`,
+          );
+        }
       }
 
       const slug = await this.generateUniqueSlug(dto.title);
