@@ -69,6 +69,11 @@ export class PaymentsController {
       } else {
         await this.paymentsService.handleChargeSuccess(event.data.reference);
       }
+    } else if (event.event === 'subscription.create') {
+      // Canonical place Paystack hands us subscription_code, customer_code,
+      // and email_token. Persist them so cancel/disable doesn't need a
+      // fallback API round-trip.
+      await this.paymentsService.handleSubscriptionCreate(event.data);
     } else if (
       event.event === 'invoices.create' ||
       event.event === 'subscription.charge.success'

@@ -447,6 +447,7 @@ export class AgentsService {
       select: {
         id: true,
         paystackSubscriptionCode: true,
+        paystackEmailToken: true,
         subscriptionStatus: true,
       },
     });
@@ -455,15 +456,37 @@ export class AgentsService {
       throw new BadRequestException('No active Paystack subscription found');
     }
 
-    // Fetch the subscription from Paystack to get the email_token needed for disable
-    const sub = await this.paystackService.fetchSubscription(
-      profile.paystackSubscriptionCode,
-    );
+    // Disabling a Paystack subscription requires both the subscription_code
+    // and the email_token (issued on subscription creation). We persist the
+    // token on charge.success; for any pre-existing subscription that
+    // predates persistence we fall back to /subscription/:code.
+    let emailToken = profile.paystackEmailToken;
+    if (!emailToken) {
+      const fetched = await this.paystackService.fetchSubscription(
+        profile.paystackSubscriptionCode,
+      );
+      emailToken = fetched.email_token;
+      if (emailToken) {
+        await this.prisma.agentProfile.update({
+          where: { id: profile.id },
+          data: { paystackEmailToken: emailToken },
+        });
+      }
+    }
 
-    // Paystack disable requires the email_token — we re-fetch via fetchSubscription
-    // which returns status/plan. The email_token is returned during creation (stored
-    // in metadata) but as a simpler approach we just disable via admin API.
-    // For now set status to CANCELLED locally; Paystack webhook will confirm.
+    if (!emailToken) {
+      throw new BadRequestException(
+        'Unable to retrieve Paystack email token for this subscription. Please contact support.',
+      );
+    }
+
+    await this.paystackService.disableSubscription({
+      code: profile.paystackSubscriptionCode,
+      token: emailToken,
+    });
+
+    // Mark locally as CANCELLED. The subscription.disable webhook will fire
+    // shortly after and confirm the state — handler is idempotent.
     await this.prisma.agentProfile.update({
       where: { id: profile.id },
       data: { subscriptionStatus: SubscriptionStatus.CANCELLED },

@@ -218,7 +218,6 @@ enum SubscriptionTier {
 
 enum SubscriptionStatus {
   ACTIVE
-  GRACE_PERIOD
   LAPSED
   CANCELLED
 }
@@ -327,6 +326,7 @@ model AgentProfile {
   subscriptionRenewsAt          DateTime?
   paystackSubscriptionCode      String?  // Paystack subscription code for the active sub
   paystackCustomerCode          String?  // Paystack customer code
+  paystackEmailToken            String?  // Required alongside subscription_code to disable a sub via Paystack API
 
   subscriptionPayments SubscriptionPayment[]
 

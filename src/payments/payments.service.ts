@@ -397,6 +397,49 @@ export class PaymentsService {
 
   // ── Subscription webhook handlers ─────────────────────────────────────────
 
+  /**
+   * Fires right after Paystack creates a subscription on their side, following
+   * the first successful charge. The payload carries the codes & tokens we
+   * need to manage the sub later — most importantly email_token, which is
+   * required (alongside subscription_code) to disable the subscription.
+   * The handler is idempotent — re-receiving the same event is a no-op.
+   */
+  async handleSubscriptionCreate(data: any): Promise<void> {
+    const subCode: string | undefined = data.subscription_code;
+    const emailToken: string | null = data.email_token ?? null;
+    const customerCode: string | undefined = data.customer?.customer_code;
+    const customerEmail: string | undefined = data.customer?.email;
+
+    if (!subCode || !customerEmail) {
+      console.warn(
+        'handleSubscriptionCreate: missing subscription_code or customer email',
+        { subCode, customerEmail },
+      );
+      return;
+    }
+
+    const user = await this.prisma.user.findUnique({
+      where: { email: customerEmail.toLowerCase() },
+      select: { agentProfile: { select: { id: true } } },
+    });
+    if (!user?.agentProfile) {
+      console.warn(
+        'handleSubscriptionCreate: no agent profile for customer email',
+        customerEmail,
+      );
+      return;
+    }
+
+    await this.prisma.agentProfile.update({
+      where: { id: user.agentProfile.id },
+      data: {
+        paystackSubscriptionCode: subCode,
+        ...(customerCode && { paystackCustomerCode: customerCode }),
+        ...(emailToken && { paystackEmailToken: emailToken }),
+      },
+    });
+  }
+
   /** Fires when an agent first pays for a subscription (initial checkout) */
   async handleSubscriptionChargeSuccess(data: any): Promise<void> {
     const meta = data.metadata as Record<string, any>;
@@ -406,9 +449,37 @@ export class PaymentsService {
       return;
     }
 
+    // Hoisted idempotency check — skips re-processing on webhook retries so
+    // we don't re-attempt to disable an already-disabled previous sub.
+    const alreadyProcessed = await this.prisma.subscriptionPayment.findUnique({
+      where: { paystackRef: data.reference },
+      select: { id: true },
+    });
+    if (alreadyProcessed) return;
+
     try {
       const subCode = data.subscription_code || data.plan?.subscription_code;
       const customerCode = data.customer?.customer_code;
+      // Paystack issues an email_token on subscription creation that's required
+      // (together with the subscription_code) to disable the sub later. The
+      // charge.success payload either embeds the full subscription object or
+      // just the code, so try both shapes — and fall back to /subscription/:code
+      // if neither is present.
+      let emailToken: string | null =
+        data.subscription?.email_token ?? data.email_token ?? null;
+      if (!emailToken && subCode) {
+        try {
+          const fetched = await this.paystackService.fetchSubscription(subCode);
+          emailToken = fetched.email_token;
+        } catch (e: any) {
+          console.warn(
+            'Could not fetch email_token for subscription',
+            subCode,
+            e?.message,
+          );
+        }
+      }
+
       const nextDate = data.paid_at
         ? new Date(
             new Date(data.paid_at).setMonth(
@@ -417,6 +488,38 @@ export class PaymentsService {
           )
         : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
 
+      // Tier-switch cleanup: if the agent already has a Paystack subscription
+      // and the new charge is for a different sub_code, that means they're
+      // upgrading/downgrading. Disable the old sub so Paystack doesn't keep
+      // auto-charging both plans next month.
+      const existing = await this.prisma.agentProfile.findUnique({
+        where: { id: agentProfileId },
+        select: {
+          paystackSubscriptionCode: true,
+          paystackEmailToken: true,
+        },
+      });
+      if (
+        existing?.paystackSubscriptionCode &&
+        existing.paystackSubscriptionCode !== subCode &&
+        existing.paystackEmailToken
+      ) {
+        try {
+          await this.paystackService.disableSubscription({
+            code: existing.paystackSubscriptionCode,
+            token: existing.paystackEmailToken,
+          });
+        } catch (e: any) {
+          // Don't bail — activating the new sub matters more than cleaning up
+          // the old. A subscription.disable webhook will arrive separately if
+          // this succeeded server-side despite the error here.
+          console.warn(
+            `Failed to disable previous subscription ${existing.paystackSubscriptionCode} on tier change:`,
+            e?.message,
+          );
+        }
+      }
+
       await this._activateSubscription({
         agentProfileId,
         tier: tier as SubscriptionTier,
@@ -424,6 +527,7 @@ export class PaymentsService {
         reference: data.reference,
         subscriptionCode: subCode ?? null,
         customerCode: customerCode ?? null,
+        emailToken,
         nextPaymentDate: nextDate,
       });
     } catch (err: any) {
@@ -471,16 +575,24 @@ export class PaymentsService {
 
     const profile = await this.prisma.agentProfile.findFirst({
       where: { paystackSubscriptionCode: subCode },
+      select: { id: true, userId: true },
     });
     if (!profile) return;
 
-    // Move to GRACE_PERIOD — listings stay live for 3 days (enforced by a cron job)
-    await this.prisma.agentProfile.update({
-      where: { id: profile.id },
-      data: { subscriptionStatus: SubscriptionStatus.GRACE_PERIOD },
-    });
+    // Mark LAPSED and pause every active listing immediately. Renewing the
+    // subscription will flip listings back to ACTIVE in _activateSubscription.
+    await this.prisma.$transaction([
+      this.prisma.agentProfile.update({
+        where: { id: profile.id },
+        data: { subscriptionStatus: SubscriptionStatus.LAPSED },
+      }),
+      this.prisma.listing.updateMany({
+        where: { agentId: profile.userId, status: ListingStatus.ACTIVE },
+        data: { status: ListingStatus.PAUSED },
+      }),
+    ]);
 
-    console.log(`Agent ${profile.id} entered GRACE_PERIOD after failed charge`);
+    console.log(`Agent ${profile.id} marked LAPSED after failed charge`);
   }
 
   /** Fires when a subscription is cancelled/disabled on Paystack side */
@@ -506,6 +618,7 @@ export class PaymentsService {
     reference: string;
     subscriptionCode: string | null;
     customerCode: string | null;
+    emailToken?: string | null;
     nextPaymentDate: Date;
   }) {
     const existing = await this.prisma.subscriptionPayment.findUnique({
@@ -525,6 +638,9 @@ export class PaymentsService {
           }),
           ...(opts.customerCode && {
             paystackCustomerCode: opts.customerCode,
+          }),
+          ...(opts.emailToken && {
+            paystackEmailToken: opts.emailToken,
           }),
         },
       }),

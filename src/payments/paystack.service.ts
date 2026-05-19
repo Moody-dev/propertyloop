@@ -152,6 +152,7 @@ export class PaystackService {
   async fetchSubscription(subscriptionCode: string): Promise<{
     status: string;
     next_payment_date: string;
+    email_token: string | null;
     plan: { plan_code: string; name: string; amount: number };
   }> {
     const response = await this.axiosInstance.get(
@@ -161,6 +162,7 @@ export class PaystackService {
     return {
       status: d.status,
       next_payment_date: d.next_payment_date,
+      email_token: d.email_token ?? null,
       plan: {
         plan_code: d.plan.plan_code,
         name: d.plan.name,
