@@ -9,13 +9,7 @@
  */
 import { PrismaPg } from '@prisma/adapter-pg';
 import { Pool } from 'pg';
-import {
-  PrismaClient,
-  Role,
-  SubscriptionStatus,
-  SubscriptionTier,
-  UserType,
-} from '../generated/prisma/client';
+import { PrismaClient } from '../generated/prisma/client';
 import 'dotenv/config';
 
 const databaseUrl = process.env.DATABASE_URL;
@@ -30,21 +24,21 @@ const apply = process.argv.includes('--apply');
 
 async function main() {
   const waitlistAgents = await prisma.waitlistEntry.findMany({
-    where: { type: UserType.REAL_ESTATE_AGENT },
+    where: { type: 'REAL_ESTATE_AGENT' },
     select: { id: true, email: true, activated: true },
   });
   const byEmail = new Map(waitlistAgents.map((w) => [w.email.toLowerCase(), w]));
 
   const candidates = await prisma.user.findMany({
     where: {
-      role: Role.AGENT,
+      role: 'AGENT',
       deletedAt: null,
       email: { in: Array.from(byEmail.keys()) },
       agentProfile: {
         is: {
           OR: [
             { subscriptionTier: null },
-            { subscriptionStatus: { not: SubscriptionStatus.ACTIVE } },
+            { subscriptionStatus: { not: 'ACTIVE' } },
           ],
         },
       },
@@ -86,8 +80,8 @@ async function main() {
       prisma.agentProfile.update({
         where: { id: u.agentProfile.id },
         data: {
-          subscriptionTier: SubscriptionTier.FOUNDING,
-          subscriptionStatus: SubscriptionStatus.ACTIVE,
+          subscriptionTier: 'FOUNDING',
+          subscriptionStatus: 'ACTIVE',
         },
       }),
       ...(wl && !wl.activated
