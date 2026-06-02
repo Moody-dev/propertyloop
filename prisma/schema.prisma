@@ -282,6 +282,10 @@ model User {
   shortletBookings           ShortletBooking[]         @relation("BuyerShortlets")
   rentalApplications         RentalApplication[]       @relation("BuyerRentals")
   reports                    Report[]                  @relation("UserReports")
+  buyerOffers                Offer[]                   @relation("BuyerOffers")
+  agentOffers                Offer[]                   @relation("AgentOffers")
+  buyerPurchases             PropertyPurchase[]        @relation("BuyerPurchases")
+  agentPurchases             PropertyPurchase[]        @relation("AgentPurchases")
 
   @@index([role])
 }
@@ -542,6 +546,8 @@ model Listing {
   rentalApplications RentalApplication[]
   logbookEntries LogbookEntry[]
   priceHistory   ListingPriceHistory[]
+  offers         Offer[]
+  purchases      PropertyPurchase[]
 
   @@index([agentId])
   @@index([type])
@@ -1065,4 +1071,138 @@ model Report {
   @@index([targetType, targetId])
   @@index([status])
   @@index([reporterId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Property purchase offers + negotiation + purchase progress
+//
+// Agents NEVER collect money on the platform — these flows are negotiation +
+// status tracking only. Any sale funds are settled off-platform between buyer
+// and seller (the app copy says "Non-binding · you and the seller settle
+// directly"). No Paystack charge/transfer is involved here.
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum OfferStatus {
+  PENDING // submitted, awaiting the agent's response
+  COUNTERED // a counter is on the table (made by agent or buyer)
+  ACCEPTED // both sides agreed → a PropertyPurchase is created
+  DECLINED // rejected by the agent
+  WITHDRAWN // pulled by the buyer
+  EXPIRED // deadline passed with no agreement
+}
+
+enum OfferFinancing {
+  CASH
+  OWN_FINANCING
+}
+
+enum OfferActor {
+  BUYER
+  AGENT
+}
+
+enum OfferEventType {
+  OFFER // initial offer
+  COUNTER // a counter-offer
+  ACCEPT
+  DECLINE
+  WITHDRAW
+  EXPIRE
+}
+
+enum PurchaseStatus {
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum PurchaseStepState {
+  DONE
+  ACTIVE
+  TODO
+}
+
+model Offer {
+  id        String  @id @default(cuid())
+  listingId String
+  listing   Listing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  buyerId   String
+  buyer     User    @relation("BuyerOffers", fields: [buyerId], references: [id], onDelete: Cascade)
+  agentId   String // denormalised from the listing for fast agent-side queries
+  agent     User    @relation("AgentOffers", fields: [agentId], references: [id], onDelete: Cascade)
+
+  // Buyer's original terms
+  amountNaira         BigInt // BigInt to match Listing.priceNaira (prices can exceed int4)
+  financing           OfferFinancing @default(CASH)
+  note                String?
+  closeDate           DateTime?
+  subjectToInspection Boolean        @default(true)
+
+  // Live negotiation state
+  status             OfferStatus @default(PENDING)
+  currentAmountNaira BigInt // latest figure on the table (initial offer or most recent counter)
+  lastActor          OfferActor  @default(BUYER) // who made the last move
+  expiresAt          DateTime? // optional buyer-set deadline for a response
+
+  events   OfferEvent[]
+  purchase PropertyPurchase?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([buyerId])
+  @@index([agentId])
+  @@index([listingId])
+  @@index([status])
+}
+
+model OfferEvent {
+  id          String         @id @default(cuid())
+  offerId     String
+  offer       Offer          @relation(fields: [offerId], references: [id], onDelete: Cascade)
+  type        OfferEventType
+  actor       OfferActor
+  amountNaira BigInt? // present for OFFER and COUNTER events
+  note        String?
+  createdAt   DateTime       @default(now())
+
+  @@index([offerId])
+}
+
+model PropertyPurchase {
+  id        String  @id @default(cuid())
+  offerId   String  @unique
+  offer     Offer   @relation(fields: [offerId], references: [id], onDelete: Cascade)
+  listingId String
+  listing   Listing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  buyerId   String
+  buyer     User    @relation("BuyerPurchases", fields: [buyerId], references: [id], onDelete: Cascade)
+  agentId   String
+  agent     User    @relation("AgentPurchases", fields: [agentId], references: [id], onDelete: Cascade)
+
+  agreedAmountNaira BigInt
+  status            PurchaseStatus @default(IN_PROGRESS)
+
+  steps PurchaseStep[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([buyerId])
+  @@index([agentId])
+}
+
+model PurchaseStep {
+  id          String            @id @default(cuid())
+  purchaseId  String
+  purchase    PropertyPurchase  @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+  order       Int
+  key         String // stable identifier, e.g. "OFFER_ACCEPTED", "TITLE_SEARCH"
+  title       String
+  detail      String
+  state       PurchaseStepState @default(TODO)
+  eta         String?
+  completedAt DateTime?
+
+  @@index([purchaseId])
 }
