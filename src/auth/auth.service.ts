@@ -43,6 +43,7 @@ export class AuthService {
   private readonly accessTtl: string;
   private readonly refreshTtlDays: number;
   private readonly sessionTtlDays: number;
+  private readonly rotationGraceMs: number;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -57,6 +58,18 @@ export class AuthService {
     );
     this.sessionTtlDays = parseInt(
       this.configService.get<string>('SESSION_TTL_DAYS') || '30',
+      10,
+    );
+    // Grace window for refresh-token rotation. Single-use rotation races are
+    // routine on the client (multiple tabs share one cookie, bootstrap fires a
+    // refresh in parallel with the first authenticated request, requests get
+    // retried). Within this window a just-rotated token presented again is
+    // treated as a benign race and re-issued, instead of being flagged as
+    // theft and revoking every session. Outside it, replay still trips full
+    // reuse detection. Default 60s covers slow networks and cold starts.
+    this.rotationGraceMs = parseInt(
+      this.configService.get<string>('JWT_REFRESH_ROTATION_GRACE_MS') ||
+        '60000',
       10,
     );
   }
@@ -209,19 +222,32 @@ export class AuthService {
       throw new UnauthorizedException('Invalid refresh token');
     }
 
-    // Reuse detection — token already used means a thief used it. Revoke chain.
-    if (stored.revokedAt || stored.replacedById) {
-      await this.prisma.refreshToken.updateMany({
-        where: { userId: stored.userId, revokedAt: null },
-        data: { revokedAt: new Date() },
-      });
-      await this.prisma.session.updateMany({
-        where: { userId: stored.userId, revokedAt: null },
-        data: { revokedAt: new Date() },
-      });
-      throw new UnauthorizedException(
-        'Refresh token reuse detected — all sessions revoked',
-      );
+    // Has this token already been rotated away? (single-use rotation)
+    const alreadyRotated = !!(stored.revokedAt || stored.replacedById);
+
+    if (alreadyRotated) {
+      // A just-rotated token presented again within the grace window is almost
+      // always a benign client race (multiple tabs, bootstrap double-refresh,
+      // a retried request) — not theft. Re-issue without touching the rest of
+      // the session. Only a replay *after* the grace window is treated as a
+      // stolen token, which revokes the entire token + session chain.
+      const revokedAgoMs = stored.revokedAt
+        ? Date.now() - stored.revokedAt.getTime()
+        : Infinity;
+      if (revokedAgoMs > this.rotationGraceMs) {
+        await this.prisma.refreshToken.updateMany({
+          where: { userId: stored.userId, revokedAt: null },
+          data: { revokedAt: new Date() },
+        });
+        await this.prisma.session.updateMany({
+          where: { userId: stored.userId, revokedAt: null },
+          data: { revokedAt: new Date() },
+        });
+        throw new UnauthorizedException(
+          'Refresh token reuse detected — all sessions revoked',
+        );
+      }
+      // else: within grace → fall through and mint a fresh pair below.
     }
 
     if (stored.expiresAt < new Date()) {
@@ -247,10 +273,16 @@ export class AuthService {
       },
     });
 
-    await this.prisma.refreshToken.update({
-      where: { id: stored.id },
-      data: { replacedById: newStored.id, revokedAt: new Date() },
-    });
+    // Normal rotation: mark the presented token as replaced. In the within-grace
+    // race path the token is already revoked/replaced, so leave its existing
+    // chain pointer intact — we just issued an extra fresh token for the racing
+    // client without disturbing the original successor.
+    if (!alreadyRotated) {
+      await this.prisma.refreshToken.update({
+        where: { id: stored.id },
+        data: { replacedById: newStored.id, revokedAt: new Date() },
+      });
+    }
 
     const accessToken = await this.signAccessToken(
       stored.user.id,

@@ -31,13 +31,12 @@ export class ListingsService {
 
     const where: Prisma.ListingWhereInput = {
       status: dto.status ?? ListingStatus.ACTIVE,
-      // Hide listings owned by suspended/deleted agents, or by agents whose
-      // subscription isn't currently ACTIVE (null, LAPSED, or CANCELLED).
-      // FOUNDING tier agents are kept ACTIVE permanently so they pass through.
+      // Hide listings owned by suspended or deleted agents. Subscription status
+      // is intentionally NOT gated here — every ACTIVE listing is shown publicly
+      // regardless of whether the agent currently has an active subscription.
       agent: {
         isActive: true,
         deletedAt: null,
-        agentProfile: { subscriptionStatus: SubscriptionStatus.ACTIVE },
       },
     };
 
@@ -109,12 +108,7 @@ export class ListingsService {
       },
     });
     if (!listing) throw new NotFoundException('Listing not found');
-    if (
-      !listing.agent.isActive ||
-      listing.agent.deletedAt ||
-      listing.agent.agentProfile?.subscriptionStatus !==
-        SubscriptionStatus.ACTIVE
-    ) {
+    if (!listing.agent.isActive || listing.agent.deletedAt) {
       throw new NotFoundException('Listing not found');
     }
 
@@ -140,12 +134,7 @@ export class ListingsService {
       },
     });
     if (!listing) throw new NotFoundException('Listing not found');
-    if (
-      !listing.agent.isActive ||
-      listing.agent.deletedAt ||
-      listing.agent.agentProfile?.subscriptionStatus !==
-        SubscriptionStatus.ACTIVE
-    ) {
+    if (!listing.agent.isActive || listing.agent.deletedAt) {
       throw new NotFoundException('Listing not found');
     }
     return this.serialize(listing);
