@@ -9,10 +9,13 @@ import {
   JobStatus,
   Prisma,
   Role,
+  VendorServicePriceMode,
 } from '../../generated/prisma/client';
 import { ListVendorsDto } from './dto/list-vendors.dto';
 import { UpdateVendorProfileDto } from './dto/update-vendor-profile.dto';
 import { CreateVendorReviewDto } from './dto/create-review.dto';
+import { CreateVendorServiceDto } from './dto/create-vendor-service.dto';
+import { UpdateVendorServiceDto } from './dto/update-vendor-service.dto';
 
 @Injectable()
 export class VendorsService {
@@ -384,6 +387,114 @@ export class VendorsService {
               ).toFixed(2),
             )
           : 0,
+    };
+  }
+
+  // ─── Service menu (vendor-menu + book-service screens) ─────────────────────
+
+  /** Owner view — includes archived (inactive) services. */
+  async listMyServices(userId: string) {
+    const services = await this.prisma.vendorService.findMany({
+      where: { vendorUserId: userId },
+      orderBy: [{ displayOrder: 'asc' }, { createdAt: 'asc' }],
+    });
+    return services.map((s) => this.serializeService(s));
+  }
+
+  /** Public view — only active services, for a vendor's profile/booking page. */
+  async listPublicServices(vendorId: string) {
+    const vendor = await this.prisma.user.findFirst({
+      where: { id: vendorId, role: Role.VENDOR, deletedAt: null },
+      select: { id: true },
+    });
+    if (!vendor) throw new NotFoundException('Vendor not found');
+    const services = await this.prisma.vendorService.findMany({
+      where: { vendorUserId: vendorId, active: true },
+      orderBy: [{ displayOrder: 'asc' }, { createdAt: 'asc' }],
+    });
+    return services.map((s) => this.serializeService(s));
+  }
+
+  async createService(userId: string, dto: CreateVendorServiceDto) {
+    const service = await this.prisma.vendorService.create({
+      data: {
+        vendorUserId: userId,
+        name: dto.name,
+        description: dto.description,
+        priceNaira: dto.priceNaira,
+        priceMode: dto.priceMode ?? VendorServicePriceMode.FIXED,
+        duration: dto.duration,
+        displayOrder: dto.displayOrder ?? 0,
+      },
+    });
+    return this.serializeService(service);
+  }
+
+  async updateService(
+    userId: string,
+    serviceId: string,
+    dto: UpdateVendorServiceDto,
+  ) {
+    await this.assertOwnsService(userId, serviceId);
+    const service = await this.prisma.vendorService.update({
+      where: { id: serviceId },
+      data: {
+        ...(dto.name !== undefined && { name: dto.name }),
+        ...(dto.description !== undefined && { description: dto.description }),
+        ...(dto.priceNaira !== undefined && { priceNaira: dto.priceNaira }),
+        ...(dto.priceMode !== undefined && { priceMode: dto.priceMode }),
+        ...(dto.duration !== undefined && { duration: dto.duration }),
+        ...(dto.displayOrder !== undefined && { displayOrder: dto.displayOrder }),
+        ...(dto.active !== undefined && { active: dto.active }),
+      },
+    });
+    return this.serializeService(service);
+  }
+
+  async deleteService(userId: string, serviceId: string) {
+    await this.assertOwnsService(userId, serviceId);
+    await this.prisma.vendorService.delete({ where: { id: serviceId } });
+    return { success: true };
+  }
+
+  private async assertOwnsService(userId: string, serviceId: string) {
+    const service = await this.prisma.vendorService.findUnique({
+      where: { id: serviceId },
+      select: { vendorUserId: true },
+    });
+    if (!service) throw new NotFoundException('Service not found');
+    if (service.vendorUserId !== userId) {
+      throw new ForbiddenException('This service is not yours');
+    }
+  }
+
+  private serializeService(s: {
+    id: string;
+    name: string;
+    description: string;
+    priceNaira: number;
+    priceMode: VendorServicePriceMode;
+    duration: string | null;
+    active: boolean;
+    displayOrder: number;
+    createdAt: Date;
+    updatedAt: Date;
+  }) {
+    const amount = `₦${s.priceNaira.toLocaleString('en-NG')}`;
+    return {
+      id: s.id,
+      name: s.name,
+      description: s.description,
+      priceNaira: s.priceNaira,
+      priceMode: s.priceMode,
+      priceLabel:
+        s.priceMode === VendorServicePriceMode.FROM ? `from ${amount}` : amount,
+      duration: s.duration,
+      active: s.active,
+      archived: !s.active,
+      displayOrder: s.displayOrder,
+      createdAt: s.createdAt,
+      updatedAt: s.updatedAt,
     };
   }
 

@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
@@ -14,6 +15,8 @@ import { VendorsService } from './vendors.service';
 import { ListVendorsDto } from './dto/list-vendors.dto';
 import { UpdateVendorProfileDto } from './dto/update-vendor-profile.dto';
 import { CreateVendorReviewDto } from './dto/create-review.dto';
+import { CreateVendorServiceDto } from './dto/create-vendor-service.dto';
+import { UpdateVendorServiceDto } from './dto/update-vendor-service.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { OptionalJwtAuthGuard } from '../auth/guards/optional-jwt-auth.guard';
@@ -106,11 +109,56 @@ export class VendorsController {
     });
   }
 
+  // ─── Service menu (owner) ─────────────────────────────────────────────────
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.VENDOR)
+  @Get('me/services')
+  listMyServices(@CurrentUser() user: CurrentUserData) {
+    return this.vendorsService.listMyServices(user.id);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.VENDOR)
+  @Post('me/services')
+  createService(
+    @CurrentUser() user: CurrentUserData,
+    @Body() dto: CreateVendorServiceDto,
+  ) {
+    return this.vendorsService.createService(user.id, dto);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.VENDOR)
+  @Patch('me/services/:serviceId')
+  updateService(
+    @CurrentUser() user: CurrentUserData,
+    @Param('serviceId') serviceId: string,
+    @Body() dto: UpdateVendorServiceDto,
+  ) {
+    return this.vendorsService.updateService(user.id, serviceId, dto);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.VENDOR)
+  @Delete('me/services/:serviceId')
+  deleteService(
+    @CurrentUser() user: CurrentUserData,
+    @Param('serviceId') serviceId: string,
+  ) {
+    return this.vendorsService.deleteService(user.id, serviceId);
+  }
+
   // ─── Public profile + reviews ────────────────────────────────────────────
 
   @Get(':id')
   getPublicProfile(@Param('id') id: string) {
     return this.vendorsService.getPublicProfile(id);
+  }
+
+  @Get(':id/services')
+  listPublicServices(@Param('id') id: string) {
+    return this.vendorsService.listPublicServices(id);
   }
 
   @Get(':id/reviews')

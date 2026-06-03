@@ -288,6 +288,7 @@ model User {
   agentPurchases             PropertyPurchase[]        @relation("AgentPurchases")
   notifications              Notification[]
   pushTokens                 PushToken[]
+  vendorServices             VendorService[]           @relation("VendorServices")
 
   @@index([role])
 }
@@ -338,6 +339,30 @@ model AgentProfile {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+enum VendorServicePriceMode {
+  FIXED
+  FROM
+}
+
+// A discrete service in a vendor's menu (BookService + vendor-menu screens).
+// Distinct from VendorProfile.serviceCategory (the vendor's headline trade).
+model VendorService {
+  id           String                 @id @default(cuid())
+  vendorUserId String
+  vendor       User                   @relation("VendorServices", fields: [vendorUserId], references: [id], onDelete: Cascade)
+  name         String
+  description  String
+  priceNaira   Int
+  priceMode    VendorServicePriceMode @default(FIXED)
+  duration     String? // e.g. "2-3 hrs", "Full day"
+  active       Boolean                @default(true) // archived = !active
+  displayOrder Int                    @default(0)
+  createdAt    DateTime               @default(now())
+  updatedAt    DateTime               @updatedAt
+
+  @@index([vendorUserId])
 }
 
 model VendorProfile {
