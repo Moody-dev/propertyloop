@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { UpdateSettingsDto } from './dto/update-settings.dto';
+import { UpdateBuyerProfileDto } from './dto/update-buyer-profile.dto';
 
 @Injectable()
 export class UsersService {
@@ -39,6 +40,24 @@ export class UsersService {
       },
     });
     return this.serialize(updated);
+  }
+
+  async updateBuyerProfile(userId: string, dto: UpdateBuyerProfileDto) {
+    const data = {
+      ...(dto.lookingFor !== undefined && { lookingFor: dto.lookingFor }),
+      ...(dto.preferredLocations !== undefined && {
+        preferredLocations: dto.preferredLocations,
+      }),
+      ...(dto.budgetRange !== undefined && { budgetRange: dto.budgetRange }),
+      ...(dto.budgetMin !== undefined && { budgetMin: dto.budgetMin }),
+      ...(dto.budgetMax !== undefined && { budgetMax: dto.budgetMax }),
+    };
+    await this.prisma.buyerProfile.upsert({
+      where: { userId },
+      create: { userId, ...data },
+      update: data,
+    });
+    return this.getProfile(userId);
   }
 
   async getSettings(userId: string) {

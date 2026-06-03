@@ -11,7 +11,11 @@ import {
 import { UsersService } from './users.service';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { UpdateSettingsDto } from './dto/update-settings.dto';
+import { UpdateBuyerProfileDto } from './dto/update-buyer-profile.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { Roles } from '../auth/decorators/roles.decorator';
+import { Role } from '../../generated/prisma/client';
 import {
   CurrentUser,
   CurrentUserData,
@@ -33,6 +37,16 @@ export class UsersController {
     @Body() dto: UpdateProfileDto,
   ) {
     return this.usersService.updateProfile(user.id, dto);
+  }
+
+  @UseGuards(RolesGuard)
+  @Roles(Role.BUYER)
+  @Patch('me/buyer')
+  updateBuyerProfile(
+    @CurrentUser() user: CurrentUserData,
+    @Body() dto: UpdateBuyerProfileDto,
+  ) {
+    return this.usersService.updateBuyerProfile(user.id, dto);
   }
 
   @Get('me/settings')
