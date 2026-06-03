@@ -17,6 +17,8 @@ import { UpdateVendorProfileDto } from './dto/update-vendor-profile.dto';
 import { CreateVendorReviewDto } from './dto/create-review.dto';
 import { CreateVendorServiceDto } from './dto/create-vendor-service.dto';
 import { UpdateVendorServiceDto } from './dto/update-vendor-service.dto';
+import { UpdateAvailabilityDto } from './dto/update-availability.dto';
+import { AddBlackoutDto } from './dto/add-blackout.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { OptionalJwtAuthGuard } from '../auth/guards/optional-jwt-auth.guard';
@@ -149,6 +151,45 @@ export class VendorsController {
     return this.vendorsService.deleteService(user.id, serviceId);
   }
 
+  // ─── Availability + blackouts (owner) ─────────────────────────────────────
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.VENDOR)
+  @Get('me/availability')
+  getMyAvailability(@CurrentUser() user: CurrentUserData) {
+    return this.vendorsService.getMyAvailability(user.id);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.VENDOR)
+  @Patch('me/availability')
+  updateAvailability(
+    @CurrentUser() user: CurrentUserData,
+    @Body() dto: UpdateAvailabilityDto,
+  ) {
+    return this.vendorsService.updateAvailability(user.id, dto);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.VENDOR)
+  @Post('me/blackouts')
+  addBlackouts(
+    @CurrentUser() user: CurrentUserData,
+    @Body() dto: AddBlackoutDto,
+  ) {
+    return this.vendorsService.addBlackouts(user.id, dto);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.VENDOR)
+  @Delete('me/blackouts/:date')
+  removeBlackout(
+    @CurrentUser() user: CurrentUserData,
+    @Param('date') date: string,
+  ) {
+    return this.vendorsService.removeBlackout(user.id, date);
+  }
+
   // ─── Public profile + reviews ────────────────────────────────────────────
 
   @Get(':id')
@@ -159,6 +200,11 @@ export class VendorsController {
   @Get(':id/services')
   listPublicServices(@Param('id') id: string) {
     return this.vendorsService.listPublicServices(id);
+  }
+
+  @Get(':id/availability')
+  getPublicAvailability(@Param('id') id: string) {
+    return this.vendorsService.getPublicAvailability(id);
   }
 
   @Get(':id/reviews')

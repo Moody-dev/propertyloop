@@ -16,6 +16,24 @@ import { UpdateVendorProfileDto } from './dto/update-vendor-profile.dto';
 import { CreateVendorReviewDto } from './dto/create-review.dto';
 import { CreateVendorServiceDto } from './dto/create-vendor-service.dto';
 import { UpdateVendorServiceDto } from './dto/update-vendor-service.dto';
+import { UpdateAvailabilityDto } from './dto/update-availability.dto';
+import { AddBlackoutDto } from './dto/add-blackout.dto';
+
+// Mirrors the mobile vendor-availability default (Mon–Fri 8–6, Sat 9–2, Sun off)
+const DEFAULT_SCHEDULE = [
+  { day: 'Monday', on: true, hours: '8:00 AM – 6:00 PM' },
+  { day: 'Tuesday', on: true, hours: '8:00 AM – 6:00 PM' },
+  { day: 'Wednesday', on: true, hours: '8:00 AM – 6:00 PM' },
+  { day: 'Thursday', on: true, hours: '8:00 AM – 6:00 PM' },
+  { day: 'Friday', on: true, hours: '8:00 AM – 6:00 PM' },
+  { day: 'Saturday', on: true, hours: '9:00 AM – 2:00 PM' },
+  { day: 'Sunday', on: false, hours: 'Off' },
+];
+
+/** Parse an ISO date (yyyy-mm-dd) to a UTC-midnight Date for a @db.Date column. */
+function toDateOnly(iso: string): Date {
+  return new Date(`${iso.slice(0, 10)}T00:00:00.000Z`);
+}
 
 @Injectable()
 export class VendorsService {
@@ -495,6 +513,143 @@ export class VendorsService {
       displayOrder: s.displayOrder,
       createdAt: s.createdAt,
       updatedAt: s.updatedAt,
+    };
+  }
+
+  // ─── Availability + blackouts (vendor-availability / vendor-blackout) ──────
+
+  /** Owner view — creates a default record on first access. */
+  async getMyAvailability(userId: string) {
+    let availability = await this.prisma.vendorAvailability.findUnique({
+      where: { vendorUserId: userId },
+    });
+    if (!availability) {
+      availability = await this.prisma.vendorAvailability.create({
+        data: { vendorUserId: userId, schedule: DEFAULT_SCHEDULE },
+      });
+    }
+    const blackouts = await this.prisma.vendorBlackout.findMany({
+      where: { vendorUserId: userId },
+      orderBy: { date: 'asc' },
+    });
+    return this.serializeAvailability(availability, blackouts);
+  }
+
+  async updateAvailability(userId: string, dto: UpdateAvailabilityDto) {
+    const data = {
+      ...(dto.acceptingBookings !== undefined && {
+        acceptingBookings: dto.acceptingBookings,
+      }),
+      ...(dto.maxJobsPerDay !== undefined && { maxJobsPerDay: dto.maxJobsPerDay }),
+      ...(dto.responseCommitment !== undefined && {
+        responseCommitment: dto.responseCommitment,
+      }),
+      ...(dto.schedule !== undefined && {
+        schedule: dto.schedule as unknown as Prisma.InputJsonValue,
+      }),
+    };
+    const availability = await this.prisma.vendorAvailability.upsert({
+      where: { vendorUserId: userId },
+      create: {
+        vendorUserId: userId,
+        schedule: (dto.schedule ??
+          DEFAULT_SCHEDULE) as unknown as Prisma.InputJsonValue,
+        ...(dto.acceptingBookings !== undefined && {
+          acceptingBookings: dto.acceptingBookings,
+        }),
+        ...(dto.maxJobsPerDay !== undefined && {
+          maxJobsPerDay: dto.maxJobsPerDay,
+        }),
+        ...(dto.responseCommitment !== undefined && {
+          responseCommitment: dto.responseCommitment,
+        }),
+      },
+      update: data,
+    });
+    const blackouts = await this.prisma.vendorBlackout.findMany({
+      where: { vendorUserId: userId },
+      orderBy: { date: 'asc' },
+    });
+    return this.serializeAvailability(availability, blackouts);
+  }
+
+  async addBlackouts(userId: string, dto: AddBlackoutDto) {
+    // Upsert each date so re-blocking an existing day just updates its reason.
+    await this.prisma.$transaction(
+      dto.dates.map((iso) =>
+        this.prisma.vendorBlackout.upsert({
+          where: {
+            vendorUserId_date: { vendorUserId: userId, date: toDateOnly(iso) },
+          },
+          create: { vendorUserId: userId, date: toDateOnly(iso), reason: dto.reason },
+          update: { reason: dto.reason },
+        }),
+      ),
+    );
+    const blackouts = await this.prisma.vendorBlackout.findMany({
+      where: { vendorUserId: userId },
+      orderBy: { date: 'asc' },
+    });
+    return blackouts.map((b) => this.serializeBlackout(b));
+  }
+
+  async removeBlackout(userId: string, iso: string) {
+    await this.prisma.vendorBlackout.deleteMany({
+      where: { vendorUserId: userId, date: toDateOnly(iso) },
+    });
+    return { success: true };
+  }
+
+  /** Public view — what a customer needs before booking. */
+  async getPublicAvailability(vendorId: string) {
+    const vendor = await this.prisma.user.findFirst({
+      where: { id: vendorId, role: Role.VENDOR, deletedAt: null },
+      select: { id: true },
+    });
+    if (!vendor) throw new NotFoundException('Vendor not found');
+
+    const availability = await this.prisma.vendorAvailability.findUnique({
+      where: { vendorUserId: vendorId },
+    });
+    // Only surface today-or-future blackouts to customers.
+    const todayIso = new Date().toISOString().slice(0, 10);
+    const blackouts = await this.prisma.vendorBlackout.findMany({
+      where: { vendorUserId: vendorId, date: { gte: toDateOnly(todayIso) } },
+      orderBy: { date: 'asc' },
+    });
+    return {
+      acceptingBookings: availability?.acceptingBookings ?? true,
+      schedule: availability?.schedule ?? DEFAULT_SCHEDULE,
+      responseCommitment: availability?.responseCommitment ?? 'Within 1 hr',
+      blackouts: blackouts.map((b) => this.serializeBlackout(b)),
+    };
+  }
+
+  private serializeAvailability(
+    a: {
+      acceptingBookings: boolean;
+      maxJobsPerDay: number;
+      responseCommitment: string;
+      schedule: unknown;
+      updatedAt: Date;
+    },
+    blackouts: { id: string; date: Date; reason: string | null }[],
+  ) {
+    return {
+      acceptingBookings: a.acceptingBookings,
+      maxJobsPerDay: a.maxJobsPerDay,
+      responseCommitment: a.responseCommitment,
+      schedule: a.schedule,
+      blackouts: blackouts.map((b) => this.serializeBlackout(b)),
+      updatedAt: a.updatedAt,
+    };
+  }
+
+  private serializeBlackout(b: { id: string; date: Date; reason: string | null }) {
+    return {
+      id: b.id,
+      date: b.date.toISOString().slice(0, 10),
+      reason: b.reason,
     };
   }
 

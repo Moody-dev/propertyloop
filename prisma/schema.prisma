@@ -289,6 +289,8 @@ model User {
   notifications              Notification[]
   pushTokens                 PushToken[]
   vendorServices             VendorService[]           @relation("VendorServices")
+  vendorAvailability         VendorAvailability?       @relation("VendorAvailability")
+  vendorBlackouts            VendorBlackout[]          @relation("VendorBlackouts")
 
   @@index([role])
 }
@@ -344,6 +346,35 @@ model AgentProfile {
 enum VendorServicePriceMode {
   FIXED
   FROM
+}
+
+// Vendor working hours + booking limits (vendor-availability screen).
+// `schedule` is a JSON array of { day, on, hours } — hours are free-text
+// display strings (e.g. "8:00 AM – 6:00 PM"), so JSON fits better than rows.
+model VendorAvailability {
+  id                 String  @id @default(cuid())
+  vendorUserId       String  @unique
+  vendor             User    @relation("VendorAvailability", fields: [vendorUserId], references: [id], onDelete: Cascade)
+  acceptingBookings  Boolean @default(true)
+  maxJobsPerDay      Int     @default(3)
+  responseCommitment String  @default("Within 1 hr")
+  schedule           Json // [{ "day": "Monday", "on": true, "hours": "8:00 AM – 6:00 PM" }]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// Individual days a vendor has blocked off (vendor-blackout screen).
+model VendorBlackout {
+  id           String   @id @default(cuid())
+  vendorUserId String
+  vendor       User     @relation("VendorBlackouts", fields: [vendorUserId], references: [id], onDelete: Cascade)
+  date         DateTime @db.Date
+  reason       String?
+  createdAt    DateTime @default(now())
+
+  @@unique([vendorUserId, date])
+  @@index([vendorUserId])
 }
 
 // A discrete service in a vendor's menu (BookService + vendor-menu screens).
