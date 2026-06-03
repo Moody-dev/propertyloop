@@ -286,6 +286,8 @@ model User {
   agentOffers                Offer[]                   @relation("AgentOffers")
   buyerPurchases             PropertyPurchase[]        @relation("BuyerPurchases")
   agentPurchases             PropertyPurchase[]        @relation("AgentPurchases")
+  notifications              Notification[]
+  pushTokens                 PushToken[]
 
   @@index([role])
 }
@@ -1205,4 +1207,42 @@ model PurchaseStep {
   completedAt DateTime?
 
   @@index([purchaseId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Notifications — in-app feed + Expo push
+//
+// `type` is a free-text key (see notification-types.ts) rather than an enum so
+// new notification kinds can ship without a schema migration. `data` carries a
+// small JSON payload the mobile app uses to deep-link (e.g. { offerId }).
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Notification {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  type  String // e.g. "OFFER_RECEIVED", "OFFER_ACCEPTED", "JOB_REQUEST"
+  title String
+  body  String
+  data  Json? // deep-link payload, e.g. { "offerId": "..." }
+
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId, readAt])
+  @@index([userId, createdAt])
+}
+
+model PushToken {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  token      String   @unique // Expo push token (ExponentPushToken[...])
+  platform   String? // "ios" | "android"
+  createdAt  DateTime @default(now())
+  lastUsedAt DateTime @default(now())
+
+  @@index([userId])
 }

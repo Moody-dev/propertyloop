@@ -31,6 +31,7 @@ import { AppWaitlistModule } from './app-waitlist/app-waitlist.module';
 import { ValuationsModule } from './valuations/valuations.module';
 import { FeaturedPropertiesModule } from './featured-properties/featured-properties.module';
 import { OffersModule } from './offers/offers.module';
+import { NotificationsModule } from './notifications/notifications.module';
 
 @Module({
   imports: [
@@ -68,6 +69,7 @@ import { OffersModule } from './offers/offers.module';
     ValuationsModule,
     FeaturedPropertiesModule,
     OffersModule,
+    NotificationsModule,
   ],
   controllers: [AppController],
   providers: [AppService, { provide: APP_GUARD, useClass: ThrottlerGuard }],

@@ -20,6 +20,8 @@ import { CreateOfferDto } from './dto/create-offer.dto';
 import { CounterOfferDto } from './dto/counter-offer.dto';
 import { ListOffersDto } from './dto/list-offers.dto';
 import { UpdateStepDto } from './dto/update-step.dto';
+import { NotificationsService } from '../notifications/notifications.service';
+import { NotificationType } from '../notifications/notification-types';
 
 // The standard 5-step purchase journey, seeded when an offer is accepted.
 // Step 1 is already done (the offer was just accepted); step 2 becomes active.
@@ -76,7 +78,10 @@ function naira(value: bigint | number): string {
 
 @Injectable()
 export class OffersService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notifications: NotificationsService,
+  ) {}
 
   // ─── Buyer: create an offer ──────────────────────────────────────────────
 
@@ -134,6 +139,15 @@ export class OffersService {
       },
       include: this.offerInclude(),
     });
+
+    void this.notifications.notify({
+      userId: listing.agentId,
+      type: NotificationType.OFFER_RECEIVED,
+      title: 'New offer received',
+      body: `${naira(amount)} offer on ${offer.listing?.title ?? 'your listing'}`,
+      data: { offerId: offer.id },
+    });
+
     return this.serializeOffer(offer);
   }
 
@@ -222,6 +236,15 @@ export class OffersService {
       },
       include: this.offerInclude(),
     });
+
+    void this.notifications.notify({
+      userId: actor === OfferActor.BUYER ? offer.agentId : offer.buyerId,
+      type: NotificationType.OFFER_COUNTERED,
+      title: 'Counter-offer',
+      body: `New counter of ${naira(amount)} on ${updated.listing?.title ?? 'the property'}`,
+      data: { offerId: offer.id },
+    });
+
     return this.serializeOffer(updated);
   }
 
@@ -285,6 +308,14 @@ export class OffersService {
       });
     });
 
+    void this.notifications.notify({
+      userId: actor === OfferActor.BUYER ? offer.agentId : offer.buyerId,
+      type: NotificationType.OFFER_ACCEPTED,
+      title: 'Offer accepted',
+      body: `The ${naira(offer.currentAmountNaira)} deal on ${result?.listing?.title ?? 'the property'} is moving to purchase`,
+      data: { offerId: offer.id, purchaseId: result?.purchase?.id },
+    });
+
     return this.serializeOffer(result!);
   }
 
@@ -304,6 +335,15 @@ export class OffersService {
       },
       include: this.offerInclude(),
     });
+
+    void this.notifications.notify({
+      userId: actor === OfferActor.BUYER ? offer.agentId : offer.buyerId,
+      type: NotificationType.OFFER_DECLINED,
+      title: 'Offer declined',
+      body: `The offer on ${updated.listing?.title ?? 'the property'} was declined`,
+      data: { offerId: offer.id },
+    });
+
     return this.serializeOffer(updated);
   }
 
@@ -320,6 +360,15 @@ export class OffersService {
       },
       include: this.offerInclude(),
     });
+
+    void this.notifications.notify({
+      userId: offer.agentId,
+      type: NotificationType.OFFER_WITHDRAWN,
+      title: 'Offer withdrawn',
+      body: `The buyer withdrew their offer on ${updated.listing?.title ?? 'your listing'}`,
+      data: { offerId: offer.id },
+    });
+
     return this.serializeOffer(updated);
   }
 
@@ -401,6 +450,16 @@ export class OffersService {
           });
         }
       }
+    });
+
+    void this.notifications.notify({
+      userId: purchase.buyerId,
+      type: NotificationType.PURCHASE_STEP_UPDATED,
+      title: 'Purchase update',
+      body: markingDone
+        ? `"${step.title}" is complete`
+        : `"${step.title}" was updated`,
+      data: { purchaseId: purchase.id },
     });
 
     return this.getPurchase(userId, purchaseId);
