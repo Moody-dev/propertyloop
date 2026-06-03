@@ -373,6 +373,22 @@ export class VendorsService {
     return review;
   }
 
+  /** Vendor posts a public reply to one of their own reviews (vendor-reply screen). */
+  async replyToReview(vendorUserId: string, reviewId: string, reply: string) {
+    const review = await this.prisma.vendorReview.findUnique({
+      where: { id: reviewId },
+      select: { vendorUserId: true },
+    });
+    if (!review) throw new NotFoundException('Review not found');
+    if (review.vendorUserId !== vendorUserId) {
+      throw new ForbiddenException('This review is not on your profile');
+    }
+    return this.prisma.vendorReview.update({
+      where: { id: reviewId },
+      data: { reply, repliedAt: new Date() },
+    });
+  }
+
   // ─── Stats ────────────────────────────────────────────────────────────────
 
   async getPublicStats() {

@@ -858,6 +858,8 @@ model VendorReview {
   rating       Int // 1–5
   comment      String
   jobTitle     String
+  reply        String? // public reply from the vendor
+  repliedAt    DateTime?
   createdAt    DateTime @default(now())
 
   @@index([vendorUserId])

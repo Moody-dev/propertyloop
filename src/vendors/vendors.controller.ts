@@ -19,6 +19,7 @@ import { CreateVendorServiceDto } from './dto/create-vendor-service.dto';
 import { UpdateVendorServiceDto } from './dto/update-vendor-service.dto';
 import { UpdateAvailabilityDto } from './dto/update-availability.dto';
 import { AddBlackoutDto } from './dto/add-blackout.dto';
+import { ReplyReviewDto } from './dto/reply-review.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { OptionalJwtAuthGuard } from '../auth/guards/optional-jwt-auth.guard';
@@ -188,6 +189,17 @@ export class VendorsController {
     @Param('date') date: string,
   ) {
     return this.vendorsService.removeBlackout(user.id, date);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.VENDOR)
+  @Post('me/reviews/:reviewId/reply')
+  replyToReview(
+    @CurrentUser() user: CurrentUserData,
+    @Param('reviewId') reviewId: string,
+    @Body() dto: ReplyReviewDto,
+  ) {
+    return this.vendorsService.replyToReview(user.id, reviewId, dto.reply);
   }
 
   // ─── Public profile + reviews ────────────────────────────────────────────
