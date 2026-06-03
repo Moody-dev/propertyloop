@@ -34,6 +34,9 @@ import {
   CreateFeaturedPropertyDto,
   UpdateFeaturedPropertyDto,
 } from '../featured-properties/featured-properties.service';
+import { KycService } from '../kyc/kyc.service';
+import { ReviewKycDto } from '../kyc/dto/review-kyc.dto';
+import { KycStatus } from '../../generated/prisma/client';
 
 function mapUserRoleToConversationRole(
   userRole: Role,
@@ -60,6 +63,7 @@ export class AdminController {
     private readonly messagesService: MessagesService,
     private readonly prisma: PrismaService,
     private readonly featuredPropertiesService: FeaturedPropertiesService,
+    private readonly kycService: KycService,
   ) {}
 
   private checkAdminAccess(role: Role) {
@@ -406,5 +410,25 @@ export class AdminController {
   ) {
     this.checkAdminAccess(user.role);
     return this.featuredPropertiesService.remove(id);
+  }
+
+  // ─── Identity / KYC review ────────────────────────────────────────────────
+
+  @Get('kyc')
+  async listKyc(@CurrentUser() user: any, @Query('status') status?: string) {
+    this.checkAdminAccess(user.role);
+    const parsed =
+      status && status in KycStatus ? (status as KycStatus) : undefined;
+    return this.kycService.listForAdmin(parsed);
+  }
+
+  @Patch('kyc/:id')
+  async reviewKyc(
+    @CurrentUser() user: any,
+    @Param('id') id: string,
+    @Body() dto: ReviewKycDto,
+  ) {
+    this.checkAdminAccess(user.role);
+    return this.kycService.review(user.id, id, dto);
   }
 }

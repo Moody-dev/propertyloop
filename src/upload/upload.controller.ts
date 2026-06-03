@@ -2,11 +2,13 @@ import {
   Controller,
   Post,
   UploadedFile,
+  UseGuards,
   UseInterceptors,
   BadRequestException,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { B2Service } from '../storage/b2.service';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
 @Controller('upload')
 export class UploadController {
@@ -95,6 +97,30 @@ export class UploadController {
       url: result.fileUrl,
       fileName: result.fileName,
       fileId: result.fileId,
+    };
+  }
+
+  // KYC documents are sensitive — require auth (unlike the public upload routes).
+  @UseGuards(JwtAuthGuard)
+  @Post('kyc-document')
+  @UseInterceptors(
+    FileInterceptor('file', { limits: { fileSize: 10 * 1024 * 1024 } }),
+  )
+  async uploadKycDocument(@UploadedFile() file: any) {
+    if (!file) {
+      throw new BadRequestException('No file provided');
+    }
+    const isImage = file.mimetype.startsWith('image/');
+    const isPdf = file.mimetype === 'application/pdf';
+    if (!isImage && !isPdf) {
+      throw new BadRequestException('File must be an image or PDF');
+    }
+    const result = await this.b2Service.uploadFile(file, 'kyc-documents');
+    return {
+      url: result.fileUrl,
+      fileName: result.fileName,
+      fileId: result.fileId,
+      mimeType: file.mimetype,
     };
   }
 

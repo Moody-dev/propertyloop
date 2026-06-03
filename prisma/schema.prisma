@@ -291,6 +291,7 @@ model User {
   vendorServices             VendorService[]           @relation("VendorServices")
   vendorAvailability         VendorAvailability?       @relation("VendorAvailability")
   vendorBlackouts            VendorBlackout[]          @relation("VendorBlackouts")
+  kycSubmission              KycSubmission?            @relation("KycSubmission")
 
   @@index([role])
 }
@@ -1303,4 +1304,37 @@ model PushToken {
   lastUsedAt DateTime @default(now())
 
   @@index([userId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Identity / KYC verification (interim: doc upload + admin approval).
+// Smile Identity integration can replace the manual review later.
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum KycStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model KycSubmission {
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation("KycSubmission", fields: [userId], references: [id], onDelete: Cascade)
+
+  fullName       String?
+  documentType   String // "NIN" | "Passport" | "Drivers License" | "Voters Card" | "CAC"
+  documentNumber String?
+  documentUrls   String[] // uploaded ID images / PDFs
+  selfieUrl      String?
+
+  status          KycStatus @default(PENDING)
+  rejectionReason String?
+  reviewedById    String?
+  reviewedAt      DateTime?
+
+  submittedAt DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([status])
 }

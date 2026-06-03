@@ -32,6 +32,7 @@ import { ValuationsModule } from './valuations/valuations.module';
 import { FeaturedPropertiesModule } from './featured-properties/featured-properties.module';
 import { OffersModule } from './offers/offers.module';
 import { NotificationsModule } from './notifications/notifications.module';
+import { KycModule } from './kyc/kyc.module';
 
 @Module({
   imports: [
@@ -70,6 +71,7 @@ import { NotificationsModule } from './notifications/notifications.module';
     FeaturedPropertiesModule,
     OffersModule,
     NotificationsModule,
+    KycModule,
   ],
   controllers: [AppController],
   providers: [AppService, { provide: APP_GUARD, useClass: ThrottlerGuard }],
