@@ -222,10 +222,12 @@ export class AuthService {
       throw new UnauthorizedException('Invalid refresh token');
     }
 
-    // Has this token already been rotated away? (single-use rotation)
-    const alreadyRotated = !!(stored.revokedAt || stored.replacedById);
+    // Was this token rotated to a successor? (single-use rotation set both
+    // replacedById AND revokedAt). Only a rotated token is eligible for the
+    // benign-race grace window.
+    const wasRotated = !!stored.replacedById;
 
-    if (alreadyRotated) {
+    if (wasRotated) {
       // A just-rotated token presented again within the grace window is almost
       // always a benign client race (multiple tabs, bootstrap double-refresh,
       // a retried request) — not theft. Re-issue without touching the rest of
@@ -248,6 +250,10 @@ export class AuthService {
         );
       }
       // else: within grace → fall through and mint a fresh pair below.
+    } else if (stored.revokedAt) {
+      // Revoked but never rotated = a deliberate kill: logout, "log out
+      // everywhere", password reset, or admin action. Never re-issue it.
+      throw new UnauthorizedException('Refresh token has been revoked');
     }
 
     if (stored.expiresAt < new Date()) {
@@ -274,10 +280,10 @@ export class AuthService {
     });
 
     // Normal rotation: mark the presented token as replaced. In the within-grace
-    // race path the token is already revoked/replaced, so leave its existing
-    // chain pointer intact — we just issued an extra fresh token for the racing
+    // race path the token is already rotated, so leave its existing chain
+    // pointer intact — we just issued an extra fresh token for the racing
     // client without disturbing the original successor.
-    if (!alreadyRotated) {
+    if (!wasRotated) {
       await this.prisma.refreshToken.update({
         where: { id: stored.id },
         data: { replacedById: newStored.id, revokedAt: new Date() },
