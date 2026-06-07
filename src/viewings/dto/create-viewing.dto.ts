@@ -13,15 +13,17 @@ export class CreateViewingDto {
   @IsNotEmpty()
   listingId: string;
 
+  // Contact details are optional for signed-in buyers — the service fills them
+  // from the authenticated user's profile. Guests must supply them.
   @IsString()
-  @IsNotEmpty()
   @MaxLength(120)
-  clientName: string;
+  @IsOptional()
+  clientName?: string;
 
   @IsString()
-  @IsNotEmpty()
   @MaxLength(40)
-  clientPhone: string;
+  @IsOptional()
+  clientPhone?: string;
 
   @IsEmail()
   @IsOptional()

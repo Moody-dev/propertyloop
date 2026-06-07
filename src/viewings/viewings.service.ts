@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -20,14 +21,37 @@ export class ViewingsService {
     });
     if (!listing) throw new NotFoundException('Listing not found');
 
+    // Signed-in buyers don't re-enter their details — fall back to the profile.
+    let clientName = dto.clientName?.trim();
+    let clientPhone = dto.clientPhone?.trim();
+    let clientEmail = dto.clientEmail?.trim();
+    if (buyerUserId) {
+      const user = await this.prisma.user.findUnique({
+        where: { id: buyerUserId },
+        select: { name: true, phone: true, email: true },
+      });
+      clientName = clientName || user?.name || undefined;
+      clientPhone = clientPhone || user?.phone || undefined;
+      clientEmail = clientEmail || user?.email || undefined;
+    }
+
+    if (!clientName) {
+      throw new BadRequestException('A name is required to book a viewing');
+    }
+    if (!clientPhone) {
+      throw new BadRequestException(
+        'A phone number is required so the agent can reach you',
+      );
+    }
+
     return this.prisma.viewing.create({
       data: {
         listingId: listing.id,
         agentId: listing.agentId,
         buyerUserId,
-        clientName: dto.clientName,
-        clientPhone: dto.clientPhone,
-        clientEmail: dto.clientEmail,
+        clientName,
+        clientPhone,
+        clientEmail,
         scheduledFor: dto.scheduledFor,
         notes: dto.notes,
       },

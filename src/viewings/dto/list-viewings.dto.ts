@@ -1,4 +1,4 @@
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import { IsBoolean, IsEnum, IsInt, IsOptional, Min } from 'class-validator';
 import { ViewingStatus } from '../../../generated/prisma/client';
 
@@ -7,8 +7,12 @@ export class ListViewingsDto {
   @IsOptional()
   status?: ViewingStatus;
 
-  /** When true, only return viewings scheduled in the future */
-  @Type(() => Boolean)
+  /**
+   * When true, only return viewings scheduled in the future.
+   * NOTE: a plain `@Type(() => Boolean)` turns the string "false" into `true`
+   * (Boolean("false") === true), so parse the string explicitly.
+   */
+  @Transform(({ value }) => value === true || value === 'true')
   @IsBoolean()
   @IsOptional()
   upcoming?: boolean;
