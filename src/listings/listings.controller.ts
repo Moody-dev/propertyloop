@@ -162,6 +162,11 @@ export class ListingsController {
     return this.listingsService.getById(id, { incrementView: true });
   }
 
+  @Get(':id/comps')
+  getComps(@Param('id') id: string) {
+    return this.listingsService.getComps(id);
+  }
+
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.AGENT)
   @Patch(':id')

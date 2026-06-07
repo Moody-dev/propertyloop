@@ -404,6 +404,105 @@ export class ListingsService {
     return { success: true };
   }
 
+  // ─── Comparables ────────────────────────────────────────────────────────
+  //
+  // Approximated from currently-active listings (we have no historical sold
+  // data): same type + location, similar bed count, within a price band. Used
+  // by the buyer's "Comps" screen to gauge whether a listing is fairly priced.
+
+  async getComps(id: string) {
+    const base = await this.prisma.listing.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        priceNaira: true,
+        priceLabel: true,
+        location: true,
+        type: true,
+        beds: true,
+      },
+    });
+    if (!base) throw new NotFoundException('Listing not found');
+
+    const asking = Number(base.priceNaira);
+    const rows = await this.prisma.listing.findMany({
+      where: {
+        id: { not: base.id },
+        status: ListingStatus.ACTIVE,
+        type: base.type,
+        location: base.location,
+        beds: { gte: Math.max(0, base.beds - 1), lte: base.beds + 1 },
+        priceNaira: {
+          gte: BigInt(Math.round(asking * 0.5)),
+          lte: BigInt(Math.round(asking * 1.8)),
+        },
+        agent: { isActive: true, deletedAt: null },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 8,
+      select: {
+        id: true,
+        title: true,
+        coverImage: true,
+        location: true,
+        beds: true,
+        baths: true,
+        sqft: true,
+        priceNaira: true,
+        priceLabel: true,
+        createdAt: true,
+      },
+    });
+
+    const comps = rows.map((r) => {
+      const price = Number(r.priceNaira);
+      const sqm = parseInt(r.sqft, 10);
+      const daysListed = Math.max(
+        0,
+        Math.floor((Date.now() - r.createdAt.getTime()) / 86_400_000),
+      );
+      return {
+        id: r.id,
+        title: r.title,
+        coverImage: r.coverImage,
+        location: r.location,
+        beds: r.beds,
+        baths: r.baths,
+        sqft: r.sqft,
+        priceNaira: price,
+        priceLabel: r.priceLabel,
+        pricePerSqm: sqm > 0 ? Math.round(price / sqm) : null,
+        daysListed,
+      };
+    });
+
+    const prices = comps.map((c) => c.priceNaira).sort((a, b) => a - b);
+    const medianNaira = prices.length
+      ? prices[Math.floor(prices.length / 2)]
+      : null;
+    const askingVsMedianPct =
+      medianNaira != null
+        ? Math.round(((asking - medianNaira) / medianNaira) * 100)
+        : null;
+    const avgDaysListed = comps.length
+      ? Math.round(comps.reduce((s, c) => s + c.daysListed, 0) / comps.length)
+      : null;
+
+    return {
+      asking: { priceNaira: asking, priceLabel: base.priceLabel },
+      location: base.location,
+      beds: base.beds,
+      type: base.type,
+      medianNaira,
+      medianLabel:
+        medianNaira != null ? `₦${medianNaira.toLocaleString('en-NG')}` : null,
+      askingVsMedianPct,
+      avgDaysListed,
+      count: comps.length,
+      comps,
+    };
+  }
+
   // ─── Stats ────────────────────────────────────────────────────────────────
 
   async getStats(type: 'SALE' | 'RENT') {
