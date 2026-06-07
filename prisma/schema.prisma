@@ -586,6 +586,8 @@ model Listing {
   verified     Boolean       @default(false)
   status       ListingStatus @default(PENDING_REVIEW)
   viewsCount   Int           @default(0)
+  featured     Boolean       @default(false) // Pro "Featured placement" — top of search
+  openToOffers Boolean       @default(false) // "Accept offers" — buyers can submit offers
   // Video tour fields (matches data/videos.ts VideoListing interface)
   virtualTourUrl String? // YouTube embed URL
   videoUrl       String? // Property video URL (upload or external)

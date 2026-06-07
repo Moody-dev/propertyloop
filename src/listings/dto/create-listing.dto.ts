@@ -2,6 +2,7 @@ import { Type } from 'class-transformer';
 import {
   ArrayMaxSize,
   IsArray,
+  IsBoolean,
   IsEnum,
   IsInt,
   IsNotEmpty,
@@ -103,4 +104,12 @@ export class CreateListingDto {
   @IsUrl({}, { each: true })
   @ArrayMaxSize(10)
   videoUrls?: string[];
+
+  @IsBoolean()
+  @IsOptional()
+  featured?: boolean;
+
+  @IsBoolean()
+  @IsOptional()
+  openToOffers?: boolean;
 }

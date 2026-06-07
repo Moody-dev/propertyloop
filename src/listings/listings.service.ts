@@ -234,6 +234,8 @@ export class ListingsService {
           virtualTourUrl: dto.virtualTourUrl,
           videoUrl: dto.videoUrl,
           videoUrls: dto.videoUrls ?? [],
+          featured: dto.featured ?? false,
+          openToOffers: dto.openToOffers ?? false,
           status: ListingStatus.ACTIVE,
         },
         include: { documents: true },
@@ -321,6 +323,8 @@ export class ListingsService {
     if (dto.virtualTourUrl !== undefined) data.virtualTourUrl = dto.virtualTourUrl;
     if (dto.videoUrl !== undefined) data.videoUrl = dto.videoUrl;
     if (dto.videoUrls !== undefined) data.videoUrls = dto.videoUrls;
+    if (dto.featured !== undefined) data.featured = dto.featured;
+    if (dto.openToOffers !== undefined) data.openToOffers = dto.openToOffers;
     if (dto.status !== undefined) {
       data.status = dto.status;
       // If marked sold/rented, bump agent's deal counter
@@ -674,6 +678,8 @@ export class ListingsService {
       verified: listing.verified,
       status: listing.status,
       viewsCount: listing.viewsCount,
+      featured: listing.featured,
+      openToOffers: listing.openToOffers,
       createdAt: listing.createdAt,
       updatedAt: listing.updatedAt,
       documents: listing.documents,
