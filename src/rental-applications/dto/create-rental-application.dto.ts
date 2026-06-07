@@ -13,8 +13,9 @@ import {
 
 export class CreateRentalApplicationDto {
   @IsString() @IsNotEmpty() listingId: string;
-  @IsString() @IsNotEmpty() @MaxLength(120) applicantName: string;
-  @IsString() @IsNotEmpty() @MaxLength(40) applicantPhone: string;
+  // Optional for signed-in buyers — filled from the profile by the service.
+  @IsString() @MaxLength(120) @IsOptional() applicantName?: string;
+  @IsString() @MaxLength(40) @IsOptional() applicantPhone?: string;
   @IsEmail() @IsOptional() applicantEmail?: string;
 
   /** Annual rent in naira (deposit amount) */

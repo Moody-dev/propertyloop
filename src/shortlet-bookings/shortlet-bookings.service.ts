@@ -32,6 +32,24 @@ export class ShortletBookingsService {
       throw new BadRequestException('Check-out must be after check-in');
     }
 
+    // Signed-in guests fall back to their profile for contact details.
+    let guestName = dto.guestName?.trim();
+    let guestPhone = dto.guestPhone?.trim();
+    let guestEmail = dto.guestEmail?.trim();
+    if (buyerUserId) {
+      const user = await this.prisma.user.findUnique({
+        where: { id: buyerUserId },
+        select: { name: true, phone: true, email: true },
+      });
+      guestName = guestName || user?.name || undefined;
+      guestPhone = guestPhone || user?.phone || undefined;
+      guestEmail = guestEmail || user?.email || undefined;
+    }
+    if (!guestName) throw new BadRequestException('A name is required to book');
+    if (!guestPhone) {
+      throw new BadRequestException('A phone number is required to book');
+    }
+
     const nights = Math.ceil(
       (checkOut.getTime() - checkIn.getTime()) / (1000 * 60 * 60 * 24),
     );
@@ -46,9 +64,9 @@ export class ShortletBookingsService {
       data: {
         listingId: listing.id,
         buyerUserId,
-        guestName: dto.guestName,
-        guestPhone: dto.guestPhone,
-        guestEmail: dto.guestEmail,
+        guestName,
+        guestPhone,
+        guestEmail,
         guests: dto.guests,
         checkIn,
         checkOut,

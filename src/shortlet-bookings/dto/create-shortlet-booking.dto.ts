@@ -14,8 +14,9 @@ import {
 
 export class CreateShortletBookingDto {
   @IsString() @IsNotEmpty() listingId: string;
-  @IsString() @IsNotEmpty() @MaxLength(120) guestName: string;
-  @IsString() @IsNotEmpty() @MaxLength(40) guestPhone: string;
+  // Optional for signed-in guests — filled from the profile by the service.
+  @IsString() @MaxLength(120) @IsOptional() guestName?: string;
+  @IsString() @MaxLength(40) @IsOptional() guestPhone?: string;
   @IsEmail() @IsOptional() guestEmail?: string;
 
   @Type(() => Number) @IsInt() @Min(1) @Max(10) guests: number;

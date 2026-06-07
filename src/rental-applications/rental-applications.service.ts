@@ -26,6 +26,26 @@ export class RentalApplicationsService {
       throw new BadRequestException('This listing is not for rent');
     }
 
+    // Signed-in applicants fall back to their profile for contact details.
+    let applicantName = dto.applicantName?.trim();
+    let applicantPhone = dto.applicantPhone?.trim();
+    let applicantEmail = dto.applicantEmail?.trim();
+    if (buyerUserId) {
+      const user = await this.prisma.user.findUnique({
+        where: { id: buyerUserId },
+        select: { name: true, phone: true, email: true },
+      });
+      applicantName = applicantName || user?.name || undefined;
+      applicantPhone = applicantPhone || user?.phone || undefined;
+      applicantEmail = applicantEmail || user?.email || undefined;
+    }
+    if (!applicantName) {
+      throw new BadRequestException('A name is required to apply');
+    }
+    if (!applicantPhone) {
+      throw new BadRequestException('A phone number is required to apply');
+    }
+
     const serviceFee = Math.round(dto.deposit * 0.05);
     const total = dto.deposit + dto.agencyFee + dto.legalFee + serviceFee;
     const escrowId = `RNT-${Date.now()}-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
@@ -34,9 +54,9 @@ export class RentalApplicationsService {
       data: {
         listingId: listing.id,
         buyerUserId,
-        applicantName: dto.applicantName,
-        applicantPhone: dto.applicantPhone,
-        applicantEmail: dto.applicantEmail,
+        applicantName,
+        applicantPhone,
+        applicantEmail,
         deposit: dto.deposit,
         agencyFee: dto.agencyFee,
         legalFee: dto.legalFee,
