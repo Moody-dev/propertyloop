@@ -9,10 +9,15 @@ import { Prisma, ViewingStatus } from '../../generated/prisma/client';
 import { CreateViewingDto } from './dto/create-viewing.dto';
 import { UpdateViewingDto } from './dto/update-viewing.dto';
 import { ListViewingsDto } from './dto/list-viewings.dto';
+import { NotificationsService } from '../notifications/notifications.service';
+import { NotificationType } from '../notifications/notification-types';
 
 @Injectable()
 export class ViewingsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notifications: NotificationsService,
+  ) {}
 
   async create(dto: CreateViewingDto, buyerUserId?: string) {
     const listing = await this.prisma.listing.findUnique({
@@ -44,7 +49,7 @@ export class ViewingsService {
       );
     }
 
-    return this.prisma.viewing.create({
+    const viewing = await this.prisma.viewing.create({
       data: {
         listingId: listing.id,
         agentId: listing.agentId,
@@ -59,6 +64,17 @@ export class ViewingsService {
         listing: { select: { id: true, title: true, coverImage: true, location: true } },
       },
     });
+
+    // Ping the listing agent that a buyer wants a viewing.
+    void this.notifications.notify({
+      userId: listing.agentId,
+      type: NotificationType.VIEWING_REQUESTED,
+      title: 'New viewing request',
+      body: `${clientName} requested to view ${viewing.listing?.title ?? 'your listing'}`,
+      data: { viewingId: viewing.id, listingId: listing.id },
+    });
+
+    return viewing;
   }
 
   async listForAgent(agentId: string, dto: ListViewingsDto) {
@@ -97,7 +113,7 @@ export class ViewingsService {
       throw new ForbiddenException('You can only update your own viewings');
     }
 
-    return this.prisma.viewing.update({
+    const updated = await this.prisma.viewing.update({
       where: { id: viewingId },
       data: {
         ...(dto.status !== undefined && { status: dto.status }),
@@ -108,6 +124,34 @@ export class ViewingsService {
         listing: { select: { id: true, title: true, coverImage: true, location: true } },
       },
     });
+
+    // Tell the buyer when the agent confirms, reschedules, or cancels.
+    if (viewing.buyerUserId) {
+      const title = updated.listing?.title ?? 'the property';
+      const rescheduled =
+        dto.scheduledFor !== undefined && dto.status !== ViewingStatus.CANCELLED;
+      if (dto.status === ViewingStatus.CONFIRMED || rescheduled) {
+        void this.notifications.notify({
+          userId: viewing.buyerUserId,
+          type: NotificationType.VIEWING_CONFIRMED,
+          title: rescheduled ? 'Viewing rescheduled' : 'Viewing confirmed',
+          body: rescheduled
+            ? `The agent proposed a new time for ${title}`
+            : `Your viewing of ${title} is confirmed`,
+          data: { viewingId: updated.id, listingId: updated.listingId },
+        });
+      } else if (dto.status === ViewingStatus.CANCELLED) {
+        void this.notifications.notify({
+          userId: viewing.buyerUserId,
+          type: NotificationType.VIEWING_CANCELLED,
+          title: 'Viewing cancelled',
+          body: `Your viewing of ${title} was cancelled by the agent`,
+          data: { viewingId: updated.id, listingId: updated.listingId },
+        });
+      }
+    }
+
+    return updated;
   }
 
   async cancel(agentId: string, viewingId: string) {
@@ -226,13 +270,24 @@ export class ViewingsService {
         'Only pending or confirmed viewings can be cancelled',
       );
     }
-    return this.prisma.viewing.update({
+    const updated = await this.prisma.viewing.update({
       where: { id: viewingId },
       data: { status: ViewingStatus.CANCELLED },
       include: {
         listing: { select: { id: true, title: true, coverImage: true, location: true } },
       },
     });
+
+    // Let the agent know the buyer pulled out.
+    void this.notifications.notify({
+      userId: viewing.agentId,
+      type: NotificationType.VIEWING_CANCELLED,
+      title: 'Viewing cancelled',
+      body: `${viewing.clientName} cancelled their viewing of ${updated.listing?.title ?? 'your listing'}`,
+      data: { viewingId: updated.id, listingId: updated.listingId },
+    });
+
+    return updated;
   }
 
   async remove(agentId: string, viewingId: string) {
