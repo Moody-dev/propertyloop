@@ -61,7 +61,7 @@ export class AuthController {
     @Res({ passthrough: true }) res: Response,
   ) {
     const result = await this.authService.signup(dto, this.extractMeta(req));
-    return this.attachRefreshCookie(res, result);
+    return this.attachRefreshCookie(res, result, req);
   }
 
   @Throttle({ default: { ttl: 60000, limit: 10 } })
@@ -73,7 +73,7 @@ export class AuthController {
     @Res({ passthrough: true }) res: Response,
   ) {
     const result = await this.authService.login(dto, this.extractMeta(req));
-    return this.attachRefreshCookie(res, result);
+    return this.attachRefreshCookie(res, result, req);
   }
 
   @Post('refresh')
@@ -82,12 +82,14 @@ export class AuthController {
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const rt = req.cookies?.[REFRESH_COOKIE];
+    // Web sends the refresh token as an HttpOnly cookie; mobile sends it in the
+    // body (no cookie jar in React Native).
+    const rt = req.body?.refreshToken || req.cookies?.[REFRESH_COOKIE];
     if (!rt) {
       throw new UnauthorizedException('No refresh token');
     }
     const result = await this.authService.refresh(rt, this.extractMeta(req));
-    return this.attachRefreshCookie(res, result);
+    return this.attachRefreshCookie(res, result, req);
   }
 
   @UseGuards(JwtAuthGuard)
@@ -208,14 +210,25 @@ export class AuthController {
 
   /**
    * Move the refresh token from the response body into an HttpOnly cookie.
-   * The client never sees the refresh token in JS — XSS can't read it.
+   * The web client never sees the refresh token in JS — XSS can't read it.
+   *
+   * Mobile clients (React Native) have no cookie jar, so when the request
+   * announces itself via `X-Client-Platform: mobile` we ALSO return the refresh
+   * token in the body for the app to persist in secure storage (Keychain /
+   * Keystore). The cookie is still set but harmless for those clients.
    */
   private attachRefreshCookie(
     res: Response,
     result: { refreshToken?: string; [k: string]: unknown },
+    req?: Request,
   ) {
     if (result.refreshToken) {
       res.cookie(REFRESH_COOKIE, result.refreshToken, refreshCookieOptions());
+    }
+    const isMobile =
+      (req?.headers['x-client-platform'] as string)?.toLowerCase() === 'mobile';
+    if (isMobile) {
+      return result; // includes refreshToken for SecureStore
     }
     const { refreshToken: _omit, ...safe } = result;
     return safe;
