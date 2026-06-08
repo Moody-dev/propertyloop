@@ -43,6 +43,10 @@ async function bootstrap() {
     rawBody: true,
     cors: { origin: origins, credentials: true },
   });
+  // Behind Railway/Render's proxy: trust X-Forwarded-* so req.secure reflects
+  // the original HTTPS scheme (used to set SameSite=None; Secure cookies) and
+  // req.ip is the real client IP (used for rate limiting).
+  app.getHttpAdapter().getInstance().set('trust proxy', 1);
   app.use(json({ limit: '100mb' }));
   app.use(urlencoded({ limit: '100mb', extended: true }));
   app.use(cookieParser());

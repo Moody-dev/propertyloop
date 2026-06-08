@@ -38,12 +38,23 @@ import { Throttle } from '@nestjs/throttler';
 const REFRESH_COOKIE = 'pl_refresh_token';
 const REFRESH_COOKIE_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 
-function refreshCookieOptions() {
-  const isProd = process.env.NODE_ENV === 'production';
+function refreshCookieOptions(req?: Request) {
+  // Derive Secure/SameSite from the actual request protocol, NOT NODE_ENV.
+  // The frontend (propertyloop.ng) and API live on different domains, so the
+  // refresh cookie is cross-site and MUST be `SameSite=None; Secure` to be
+  // sent on the /auth/refresh XHR — which only works over HTTPS. Gating this on
+  // NODE_ENV silently broke refresh (→ logout on reload) whenever the env var
+  // wasn't set to "production" on the host. Behind Railway/Render, the original
+  // scheme arrives in `x-forwarded-proto`.
+  const forwardedProto = (req?.headers['x-forwarded-proto'] as string | undefined)
+    ?.split(',')[0]
+    ?.trim()
+    ?.toLowerCase();
+  const isHttps = forwardedProto === 'https' || req?.secure === true;
   return {
     httpOnly: true,
-    secure: isProd, // localhost is http, so don't force secure in dev
-    sameSite: (isProd ? 'none' : 'lax') as 'none' | 'lax',
+    secure: isHttps, // localhost is http, so don't force secure in dev
+    sameSite: (isHttps ? 'none' : 'lax') as 'none' | 'lax',
     path: '/api/auth',
     maxAge: REFRESH_COOKIE_MAX_AGE_MS,
   };
@@ -101,7 +112,10 @@ export class AuthController {
     @Res({ passthrough: true }) res: Response,
   ) {
     const rt = req.cookies?.[REFRESH_COOKIE];
-    res.clearCookie(REFRESH_COOKIE, { path: '/api/auth' });
+    // Match the attributes the cookie was set with so the browser actually
+    // drops a SameSite=None; Secure cookie.
+    const { httpOnly, secure, sameSite, path } = refreshCookieOptions(req);
+    res.clearCookie(REFRESH_COOKIE, { httpOnly, secure, sameSite, path });
     return this.authService.logout(user.id, rt);
   }
 
@@ -223,7 +237,7 @@ export class AuthController {
     req?: Request,
   ) {
     if (result.refreshToken) {
-      res.cookie(REFRESH_COOKIE, result.refreshToken, refreshCookieOptions());
+      res.cookie(REFRESH_COOKIE, result.refreshToken, refreshCookieOptions(req));
     }
     const isMobile =
       (req?.headers['x-client-platform'] as string)?.toLowerCase() === 'mobile';
