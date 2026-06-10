@@ -63,9 +63,9 @@ export class CreateListingDto {
   baths: number;
 
   @IsString()
-  @IsNotEmpty()
+  @IsOptional()
   @MaxLength(40)
-  sqft: string;
+  sqft?: string;
 
   @IsString()
   @IsOptional()
