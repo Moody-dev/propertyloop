@@ -4,6 +4,7 @@ import {
   S3Client,
   PutObjectCommand,
   DeleteObjectCommand,
+  GetObjectCommand,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import * as crypto from 'crypto';
@@ -159,6 +160,36 @@ export class B2Service implements OnModuleInit {
     const fileUrl = `${base}/${key}`;
 
     return { uploadUrl, fileUrl, key };
+  }
+
+  /** The public base URL objects are reachable at (no trailing slash). */
+  getPublicBaseUrl(): string {
+    return this.publicUrl
+      ? this.publicUrl.replace(/\/$/, '')
+      : `${this.endpoint}/${this.bucketName}`;
+  }
+
+  /**
+   * Read an object's raw bytes straight from R2 (server-side GetObject), used
+   * by the watermark proxy. Returns the buffer plus its stored content-type.
+   */
+  async getObjectBuffer(
+    key: string,
+  ): Promise<{ buffer: Buffer; contentType?: string }> {
+    if (!this.s3Client || !this.bucketName) {
+      throw new BadRequestException('File storage service is not available.');
+    }
+    const res = await this.s3Client.send(
+      new GetObjectCommand({ Bucket: this.bucketName, Key: key }),
+    );
+    const body = res.Body as
+      | { transformToByteArray?: () => Promise<Uint8Array> }
+      | undefined;
+    if (!body?.transformToByteArray) {
+      throw new BadRequestException('Object stream unavailable');
+    }
+    const bytes = await body.transformToByteArray();
+    return { buffer: Buffer.from(bytes), contentType: res.ContentType };
   }
 
   async deleteFile(fileName: string): Promise<void> {

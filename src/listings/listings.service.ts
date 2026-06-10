@@ -17,10 +17,14 @@ import { CreateListingDto } from './dto/create-listing.dto';
 import { UpdateListingDto } from './dto/update-listing.dto';
 import { ListListingsDto } from './dto/list-listings.dto';
 import { AddListingDocumentDto } from './dto/add-document.dto';
+import { MediaUrlService } from '../media/media-url.service';
 
 @Injectable()
 export class ListingsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly mediaUrl: MediaUrlService,
+  ) {}
 
   // ─── Public listing & search ─────────────────────────────────────────────
 
@@ -468,7 +472,7 @@ export class ListingsService {
       return {
         id: r.id,
         title: r.title,
-        coverImage: r.coverImage,
+        coverImage: this.mediaUrl.rewrite(r.coverImage),
         location: r.location,
         beds: r.beds,
         baths: r.baths,
@@ -669,8 +673,8 @@ export class ListingsService {
       yearBuilt: listing.yearBuilt,
       description: listing.description,
       features: listing.features,
-      coverImage: listing.coverImage,
-      images: listing.images,
+      coverImage: this.mediaUrl.rewrite(listing.coverImage),
+      images: this.mediaUrl.rewriteMany(listing.images),
       virtualTourUrl: listing.virtualTourUrl,
       videoUrl: listing.videoUrl,
       videoUrls: listing.videoUrls ?? [],

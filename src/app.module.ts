@@ -23,6 +23,7 @@ import { ShortletBookingsModule } from './shortlet-bookings/shortlet-bookings.mo
 import { RentalApplicationsModule } from './rental-applications/rental-applications.module';
 import { MessagesModule } from './messages/messages.module';
 import { StorageModule } from './storage/storage.module';
+import { MediaModule } from './media/media.module';
 import { PaymentsModule } from './payments/payments.module';
 import { AdminModule } from './admin/admin.module';
 import { UploadModule } from './upload/upload.module';
@@ -46,6 +47,7 @@ import { KycModule } from './kyc/kyc.module';
     PrismaModule,
     MailModule,
     StorageModule,
+    MediaModule,
     PaymentsModule,
     WaitlistModule,
     AuthModule,

@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { MediaUrlService } from '../media/media-url.service';
 
 export interface CreateFeaturedPropertyDto {
   title: string;
@@ -23,7 +24,10 @@ export type UpdateFeaturedPropertyDto = Partial<CreateFeaturedPropertyDto>;
 
 @Injectable()
 export class FeaturedPropertiesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly mediaUrl: MediaUrlService,
+  ) {}
 
   /** Public: only active properties, ordered newest first */
   async listActive() {
@@ -99,6 +103,7 @@ export class FeaturedPropertiesService {
     return {
       ...p,
       priceNaira: Number(p.priceNaira),
+      imageUrls: this.mediaUrl.rewriteMany(p.imageUrls),
     };
   }
 }
