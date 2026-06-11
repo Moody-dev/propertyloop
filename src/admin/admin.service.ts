@@ -12,6 +12,7 @@ import {
   Prisma,
 } from '../../generated/prisma/client';
 import { UpdateListingDto } from '../listings/dto/update-listing.dto';
+import { AdminCreateListingDto } from '../listings/dto/admin-create-listing.dto';
 
 @Injectable()
 export class AdminService {
@@ -241,6 +242,90 @@ export class AdminService {
       where: { id: listingId },
       data: { status },
     });
+  }
+
+  /**
+   * Create a listing on behalf of an agent. Unlike the agent-facing
+   * `ListingsService.create`, this is an admin override: it does NOT gate on
+   * the agent's subscription status or the STANDARD active-listing cap, and it
+   * lets the admin set the initial status directly (defaults to PENDING_REVIEW
+   * so the listing still goes through the normal verification flow).
+   */
+  async adminCreateListing(dto: AdminCreateListingDto) {
+    const agent = await this.prisma.user.findUnique({
+      where: { id: dto.agentId },
+      include: { agentProfile: true },
+    });
+    if (!agent) {
+      throw new NotFoundException('Agent not found');
+    }
+    if (agent.role !== Role.AGENT || !agent.agentProfile) {
+      throw new BadRequestException(
+        'Listings can only be assigned to an agent account.',
+      );
+    }
+
+    const slug = await this.generateUniqueListingSlug(dto.title);
+    const priceLabel = `₦${dto.priceNaira.toLocaleString('en-NG')}`;
+
+    const listing = await this.prisma.listing.create({
+      data: {
+        agentId: dto.agentId,
+        title: dto.title,
+        slug,
+        type: dto.type,
+        propertyType: dto.propertyType,
+        priceNaira: dto.priceNaira,
+        priceLabel,
+        period: dto.period,
+        address: dto.address,
+        location: dto.location,
+        beds: dto.beds,
+        baths: dto.baths,
+        sqft: dto.sqft,
+        yearBuilt: dto.yearBuilt,
+        description: dto.description,
+        features: dto.features,
+        coverImage: dto.coverImage,
+        images: dto.images,
+        virtualTourUrl: dto.virtualTourUrl,
+        videoUrl: dto.videoUrl,
+        videoUrls: dto.videoUrls ?? [],
+        status: dto.status ?? ListingStatus.PENDING_REVIEW,
+      },
+      include: { agent: { include: { agentProfile: true } }, documents: true },
+    });
+
+    // Best-effort counter bump — mirror ListingsService.create. Don't fail the
+    // whole creation if the counter update blows up; it can be reconciled.
+    try {
+      await this.prisma.agentProfile.update({
+        where: { userId: dto.agentId },
+        data: { listingsCount: { increment: 1 } },
+      });
+    } catch (counterErr) {
+      console.warn(
+        `[admin.adminCreateListing] listingsCount increment failed for agent ${dto.agentId}:`,
+        counterErr,
+      );
+    }
+
+    return listing;
+  }
+
+  private async generateUniqueListingSlug(title: string): Promise<string> {
+    const base = title
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 60);
+    let slug = base || 'listing';
+    let i = 1;
+    while (await this.prisma.listing.findUnique({ where: { slug } })) {
+      i += 1;
+      slug = `${base}-${i}`;
+    }
+    return slug;
   }
 
   async adminUpdateListing(listingId: string, dto: UpdateListingDto) {

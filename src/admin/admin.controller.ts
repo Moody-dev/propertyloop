@@ -29,6 +29,7 @@ import { ConversationParticipantRole } from '../../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotFoundException } from '@nestjs/common';
 import { UpdateListingDto } from '../listings/dto/update-listing.dto';
+import { AdminCreateListingDto } from '../listings/dto/admin-create-listing.dto';
 import {
   FeaturedPropertiesService,
   CreateFeaturedPropertyDto,
@@ -150,6 +151,15 @@ export class AdminController {
       status,
       search,
     });
+  }
+
+  @Post('listings')
+  async createListing(
+    @CurrentUser() user: any,
+    @Body() dto: AdminCreateListingDto,
+  ) {
+    this.checkAdminAccess(user.role);
+    return this.adminService.adminCreateListing(dto);
   }
 
   @Patch('listings/:id/status')
