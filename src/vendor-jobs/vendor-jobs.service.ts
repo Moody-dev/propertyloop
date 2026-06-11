@@ -7,6 +7,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { PaymentsService } from '../payments/payments.service';
 import {
+  DisputeAuthorRole,
   EarningStatus,
   EscrowStatus,
   JobStatus,
@@ -17,6 +18,11 @@ import { CreateBookingDto } from './dto/create-booking.dto';
 import { ListJobsDto } from './dto/list-jobs.dto';
 import { CompleteJobDto } from './dto/complete-job.dto';
 import { DisputeJobDto } from './dto/dispute-job.dto';
+import { AddDisputeMessageDto } from './dto/add-dispute-message.dto';
+
+// Vendors get 48 hours to respond once a dispute is raised.
+const DISPUTE_RESPONSE_WINDOW_MS = 48 * 60 * 60 * 1000;
+const SYSTEM_MEDIATION_NOTE = '⚖️ PropertyLoop is mediating this dispute';
 
 @Injectable()
 export class VendorJobsService {
@@ -237,14 +243,88 @@ export class VendorJobsService {
       throw new BadRequestException('Escrow is not currently locked for this job');
     }
 
-    return this.prisma.vendorJob.update({
+    // Open the dispute and seed the thread: the customer's claim + a system
+    // note that PropertyLoop is now mediating.
+    const [updated] = await this.prisma.$transaction([
+      this.prisma.vendorJob.update({
+        where: { id: jobId },
+        data: {
+          escrowStatus: EscrowStatus.DISPUTED,
+          disputeReason: dto.disputeReason,
+          disputedAt: new Date(),
+        },
+      }),
+      this.prisma.jobDisputeMessage.create({
+        data: {
+          jobId,
+          senderUserId: buyerUserId,
+          role: DisputeAuthorRole.CUSTOMER,
+          body: dto.disputeReason,
+        },
+      }),
+      this.prisma.jobDisputeMessage.create({
+        data: {
+          jobId,
+          role: DisputeAuthorRole.SYSTEM,
+          body: SYSTEM_MEDIATION_NOTE,
+        },
+      }),
+    ]);
+
+    return updated;
+  }
+
+  // ─── Dispute thread ──────────────────────────────────────────────────────
+
+  async getDispute(jobId: string, requestingUserId: string) {
+    const job = await this.prisma.vendorJob.findUnique({
       where: { id: jobId },
-      data: {
-        escrowStatus: EscrowStatus.DISPUTED,
-        disputeReason: dto.disputeReason,
-        disputedAt: new Date(),
+      include: {
+        vendor: true,
+        disputeMessages: {
+          orderBy: { createdAt: 'asc' },
+          include: { sender: true },
+        },
       },
     });
+    if (!job) throw new NotFoundException('Job not found');
+    if (
+      job.vendorUserId !== requestingUserId &&
+      job.buyerUserId !== requestingUserId
+    ) {
+      throw new ForbiddenException('You are not a party to this job');
+    }
+    return this.serializeDispute(job);
+  }
+
+  async addDisputeMessage(
+    jobId: string,
+    userId: string,
+    dto: AddDisputeMessageDto,
+  ) {
+    const job = await this.prisma.vendorJob.findUnique({ where: { id: jobId } });
+    if (!job) throw new NotFoundException('Job not found');
+
+    let role: DisputeAuthorRole;
+    if (job.vendorUserId === userId) role = DisputeAuthorRole.VENDOR;
+    else if (job.buyerUserId === userId) role = DisputeAuthorRole.CUSTOMER;
+    else throw new ForbiddenException('You are not a party to this job');
+
+    if (job.escrowStatus !== EscrowStatus.DISPUTED) {
+      throw new BadRequestException('This job is not currently under dispute');
+    }
+
+    await this.prisma.jobDisputeMessage.create({
+      data: {
+        jobId,
+        senderUserId: userId,
+        role,
+        body: dto.body,
+        attachments: dto.attachments ?? [],
+      },
+    });
+
+    return this.getDispute(jobId, userId);
   }
 
   // ─── Helpers ──────────────────────────────────────────────────────────────
@@ -299,6 +379,58 @@ export class VendorJobsService {
             verified: vendor.vendorProfile?.verified ?? false,
           }
         : null,
+    };
+  }
+
+  private serializeDispute(job: any) {
+    const deadline = job.disputedAt
+      ? new Date(job.disputedAt.getTime() + DISPUTE_RESPONSE_WINDOW_MS)
+      : null;
+    return {
+      jobId: job.id,
+      jobRef: `SL-${job.id.slice(-8).toUpperCase()}`,
+      status: job.escrowStatus,
+      reason: job.disputeReason,
+      disputedAt: job.disputedAt,
+      responseDeadline: deadline,
+      amountHeldNaira: job.escrowAmount,
+      amountTotalNaira: job.amount,
+      service: job.category,
+      title: job.title,
+      address: job.address,
+      scheduledFor: job.scheduledFor,
+      completedAt: job.completedAt,
+      customer: {
+        name: job.clientName,
+        avatar: job.clientAvatar ?? null,
+      },
+      vendor: job.vendor
+        ? { id: job.vendor.id, name: job.vendor.name, avatar: job.vendor.avatarUrl }
+        : null,
+      thread: (job.disputeMessages ?? []).map((m: any) =>
+        this.serializeDisputeMessage(m, job),
+      ),
+    };
+  }
+
+  private serializeDisputeMessage(m: any, job: any) {
+    let author: string;
+    if (m.role === DisputeAuthorRole.CUSTOMER) {
+      author = job.clientName ?? 'Customer';
+    } else if (m.role === DisputeAuthorRole.VENDOR) {
+      author = job.vendor?.name ?? 'Vendor';
+    } else if (m.role === DisputeAuthorRole.ADMIN) {
+      author = m.sender?.name ?? 'PropertyLoop';
+    } else {
+      author = 'System';
+    }
+    return {
+      id: m.id,
+      role: m.role,
+      author,
+      body: m.body,
+      attachments: m.attachments ?? [],
+      createdAt: m.createdAt,
     };
   }
 }

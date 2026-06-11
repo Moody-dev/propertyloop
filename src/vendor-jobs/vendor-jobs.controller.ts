@@ -17,6 +17,7 @@ import { CreateBookingDto } from './dto/create-booking.dto';
 import { ListJobsDto } from './dto/list-jobs.dto';
 import { CompleteJobDto } from './dto/complete-job.dto';
 import { DisputeJobDto } from './dto/dispute-job.dto';
+import { AddDisputeMessageDto } from './dto/add-dispute-message.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { OptionalJwtAuthGuard } from '../auth/guards/optional-jwt-auth.guard';
@@ -138,5 +139,27 @@ export class VendorJobsController {
     @Body() dto: DisputeJobDto,
   ) {
     return this.vendorJobsService.dispute(user.id, id, dto);
+  }
+
+  // ─── Dispute thread (vendor or buyer on the job) ────────────────────────
+
+  @UseGuards(JwtAuthGuard)
+  @Get(':id/dispute')
+  getDispute(
+    @CurrentUser() user: CurrentUserData,
+    @Param('id') id: string,
+  ) {
+    return this.vendorJobsService.getDispute(id, user.id);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post(':id/dispute/messages')
+  @HttpCode(HttpStatus.OK)
+  addDisputeMessage(
+    @CurrentUser() user: CurrentUserData,
+    @Param('id') id: string,
+    @Body() dto: AddDisputeMessageDto,
+  ) {
+    return this.vendorJobsService.addDisputeMessage(id, user.id, dto);
   }
 }

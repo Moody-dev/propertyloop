@@ -278,6 +278,7 @@ model User {
   agentReviewsReceived       AgentReview[]             @relation("AgentReviewsReceived")
   agentReviewsWritten        AgentReview[]             @relation("AgentReviewsWritten")
   vendorBookings             VendorJob[]               @relation("VendorBuyerJobs")
+  disputeMessages            JobDisputeMessage[]       @relation("DisputeMessages")
   logbookEntries             LogbookEntry[]            @relation("LogbookOwner")
   shortletBookings           ShortletBooking[]         @relation("BuyerShortlets")
   rentalApplications         RentalApplication[]       @relation("BuyerRentals")
@@ -292,6 +293,15 @@ model User {
   vendorAvailability         VendorAvailability?       @relation("VendorAvailability")
   vendorBlackouts            VendorBlackout[]          @relation("VendorBlackouts")
   kycSubmission              KycSubmission?            @relation("KycSubmission")
+
+  // Social feed
+  feedPosts     FeedPost[]     @relation("FeedPosts")
+  feedComments  FeedComment[]  @relation("FeedComments")
+  feedLikes     FeedLike[]     @relation("FeedLikes")
+  feedSaves     FeedSave[]     @relation("FeedSaves")
+  feedPollVotes FeedPollVote[] @relation("FeedPollVotes")
+  following     UserFollow[]   @relation("Following")
+  followers     UserFollow[]   @relation("Followers")
 
   @@index([role])
 }
@@ -609,6 +619,7 @@ model Listing {
   priceHistory   ListingPriceHistory[]
   offers         Offer[]
   purchases      PropertyPurchase[]
+  feedShares     FeedPost[]            @relation("FeedListingShares")
 
   @@index([agentId])
   @@index([type])
@@ -821,15 +832,41 @@ model VendorJob {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  earning      VendorEarning?
-  reviews      VendorReview[]
-  logbookEntry LogbookEntry?
+  earning         VendorEarning?
+  reviews         VendorReview[]
+  logbookEntry    LogbookEntry?
+  disputeMessages JobDisputeMessage[]
 
   @@index([vendorUserId])
   @@index([buyerUserId])
   @@index([status])
   @@index([escrowStatus])
   @@index([transferCode])
+}
+
+// Threaded conversation on a disputed VendorJob. The customer raises the
+// dispute (first CUSTOMER message + a SYSTEM mediation note), the vendor
+// responds with evidence, and admins can weigh in — all scoped to one job.
+enum DisputeAuthorRole {
+  CUSTOMER
+  VENDOR
+  SYSTEM
+  ADMIN
+}
+
+model JobDisputeMessage {
+  id           String            @id @default(cuid())
+  jobId        String
+  job          VendorJob         @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  // Null for SYSTEM messages.
+  senderUserId String?
+  sender       User?             @relation("DisputeMessages", fields: [senderUserId], references: [id], onDelete: SetNull)
+  role         DisputeAuthorRole
+  body         String
+  attachments  String[]
+  createdAt    DateTime          @default(now())
+
+  @@index([jobId])
 }
 
 model VendorEarning {
@@ -1339,4 +1376,142 @@ model KycSubmission {
   updatedAt   DateTime @updatedAt
 
   @@index([status])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Social feed — community posts shared between agents, vendors, buyers,
+// sellers and developers. Post types mirror the composer chips on the web
+// feed (update / market insight / completed project / property tip /
+// industry news / poll / listing share).
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum FeedPostType {
+  UPDATE
+  INSIGHT
+  PROJECT
+  TIP
+  NEWS
+  POLL
+  LISTING
+}
+
+model FeedPost {
+  id       String       @id @default(cuid())
+  authorId String
+  author   User         @relation("FeedPosts", fields: [authorId], references: [id], onDelete: Cascade)
+  type     FeedPostType @default(UPDATE)
+  body     String
+
+  // Photo posts (R2 URLs, up to 4 rendered as a collage)
+  images String[] @default([])
+
+  // Listing share — embeds one of the author's listings as a card
+  listingId String?
+  listing   Listing? @relation("FeedListingShares", fields: [listingId], references: [id], onDelete: SetNull)
+
+  // Market-insight card (all optional; bars are relative heights 0-100)
+  insightMetric String?
+  insightPeriod String?
+  insightDelta  String?
+  insightBars   Int[]   @default([])
+
+  // Completed-project card
+  projectName     String?
+  projectLocation String?
+  projectUnits    String?
+
+  // Poll
+  pollEndsAt  DateTime?
+  pollOptions FeedPollOption[]
+
+  likes    FeedLike[]
+  saves    FeedSave[]
+  comments FeedComment[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@index([createdAt])
+  @@index([authorId])
+  @@index([type])
+}
+
+model FeedPollOption {
+  id     String         @id @default(cuid())
+  postId String
+  post   FeedPost       @relation(fields: [postId], references: [id], onDelete: Cascade)
+  text   String
+  order  Int            @default(0)
+  votes  FeedPollVote[]
+
+  @@index([postId])
+}
+
+model FeedPollVote {
+  id       String         @id @default(cuid())
+  optionId String
+  option   FeedPollOption @relation(fields: [optionId], references: [id], onDelete: Cascade)
+  postId   String // denormalised so one-vote-per-post is enforceable
+  userId   String
+  user     User           @relation("FeedPollVotes", fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([postId, userId])
+}
+
+model FeedLike {
+  id     String   @id @default(cuid())
+  postId String
+  post   FeedPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  userId String
+  user   User     @relation("FeedLikes", fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([postId, userId])
+  @@index([userId])
+}
+
+model FeedSave {
+  id     String   @id @default(cuid())
+  postId String
+  post   FeedPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  userId String
+  user   User     @relation("FeedSaves", fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([postId, userId])
+  @@index([userId])
+}
+
+model FeedComment {
+  id       String        @id @default(cuid())
+  postId   String
+  post     FeedPost      @relation(fields: [postId], references: [id], onDelete: Cascade)
+  authorId String
+  author   User          @relation("FeedComments", fields: [authorId], references: [id], onDelete: Cascade)
+  body     String
+  parentId String?
+  parent   FeedComment?  @relation("FeedCommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
+  replies  FeedComment[] @relation("FeedCommentReplies")
+
+  createdAt DateTime @default(now())
+
+  @@index([postId])
+}
+
+model UserFollow {
+  id          String @id @default(cuid())
+  followerId  String
+  follower    User   @relation("Following", fields: [followerId], references: [id], onDelete: Cascade)
+  followingId String
+  following   User   @relation("Followers", fields: [followingId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([followerId, followingId])
+  @@index([followingId])
 }
