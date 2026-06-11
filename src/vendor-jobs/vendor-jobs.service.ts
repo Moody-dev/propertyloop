@@ -6,6 +6,8 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { PaymentsService } from '../payments/payments.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import { NotificationType } from '../notifications/notification-types';
 import {
   DisputeAuthorRole,
   EarningStatus,
@@ -24,11 +26,16 @@ import { AddDisputeMessageDto } from './dto/add-dispute-message.dto';
 const DISPUTE_RESPONSE_WINDOW_MS = 48 * 60 * 60 * 1000;
 const SYSTEM_MEDIATION_NOTE = '⚖️ PropertyLoop is mediating this dispute';
 
+function nairaLabel(n: number) {
+  return `₦${Math.round(n).toLocaleString('en-NG')}`;
+}
+
 @Injectable()
 export class VendorJobsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly paymentsService: PaymentsService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   // ─── Booking creation (buyer → vendor) ───────────────────────────────────
@@ -78,6 +85,14 @@ export class VendorJobsService {
       include: {
         vendor: { include: { vendorProfile: true } },
       },
+    });
+
+    void this.notifications.notify({
+      userId: vendor.id,
+      type: NotificationType.JOB_REQUEST,
+      title: 'New service request',
+      body: `${dto.clientName} requested ${job.title} · ${nairaLabel(job.vendorFee)}`,
+      data: { jobId: job.id },
     });
 
     return this.serialize(job);
@@ -221,6 +236,14 @@ export class VendorJobsService {
     // Call payments service to release escrow and initiate transfer
     await this.paymentsService.releaseEscrow(jobId, buyerUserId);
 
+    void this.notifications.notify({
+      userId: job.vendorUserId,
+      type: NotificationType.JOB_CONFIRMED,
+      title: 'Payment released',
+      body: `${job.clientName} confirmed ${job.title}. ${nairaLabel(job.vendorFee)} is on its way.`,
+      data: { jobId },
+    });
+
     // Fetch and return the updated job
     return this.prisma.vendorJob.findUnique({
       where: { id: jobId },
@@ -270,6 +293,14 @@ export class VendorJobsService {
         },
       }),
     ]);
+
+    void this.notifications.notify({
+      userId: job.vendorUserId,
+      type: NotificationType.JOB_DISPUTED,
+      title: 'Customer raised a dispute',
+      body: `${job.clientName} disputed ${job.title}. Respond with evidence within 48 hours.`,
+      data: { jobId: job.id },
+    });
 
     return updated;
   }
