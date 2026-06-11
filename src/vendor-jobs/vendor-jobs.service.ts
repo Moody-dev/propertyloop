@@ -205,7 +205,7 @@ export class VendorJobsService {
     if (job.status !== JobStatus.IN_PROGRESS && job.status !== JobStatus.ACCEPTED) {
       throw new BadRequestException('Only active jobs can be marked complete');
     }
-    return this.prisma.vendorJob.update({
+    const updated = await this.prisma.vendorJob.update({
       where: { id: jobId },
       data: {
         status: JobStatus.COMPLETED,
@@ -214,6 +214,18 @@ export class VendorJobsService {
         completionProofImages: dto.completionProofImages ?? [],
       },
     });
+
+    if (job.buyerUserId) {
+      void this.notifications.notify({
+        userId: job.buyerUserId,
+        type: NotificationType.JOB_COMPLETED,
+        title: 'Service marked complete',
+        body: `${job.title} is done. Review and confirm to release ${nairaLabel(job.vendorFee)} from escrow.`,
+        data: { jobId },
+      });
+    }
+
+    return updated;
   }
 
   // ─── State transitions (buyer side) ──────────────────────────────────────
