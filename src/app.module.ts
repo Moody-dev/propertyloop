@@ -34,6 +34,7 @@ import { FeaturedPropertiesModule } from './featured-properties/featured-propert
 import { OffersModule } from './offers/offers.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { KycModule } from './kyc/kyc.module';
+import { FeedModule } from './feed/feed.module';
 
 @Module({
   imports: [
@@ -74,6 +75,7 @@ import { KycModule } from './kyc/kyc.module';
     OffersModule,
     NotificationsModule,
     KycModule,
+    FeedModule,
   ],
   controllers: [AppController],
   providers: [AppService, { provide: APP_GUARD, useClass: ThrottlerGuard }],

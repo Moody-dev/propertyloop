@@ -124,6 +124,27 @@ export class UploadController {
     };
   }
 
+  // Social feed post photos — require auth (posts are user-generated).
+  @UseGuards(JwtAuthGuard)
+  @Post('feed-image')
+  @UseInterceptors(
+    FileInterceptor('file', { limits: { fileSize: 10 * 1024 * 1024 } }),
+  )
+  async uploadFeedImage(@UploadedFile() file: any) {
+    if (!file) {
+      throw new BadRequestException('No file provided');
+    }
+    if (!file.mimetype.startsWith('image/')) {
+      throw new BadRequestException('File must be an image');
+    }
+    const result = await this.b2Service.uploadFile(file, 'feed-images');
+    return {
+      url: result.fileUrl,
+      fileName: result.fileName,
+      fileId: result.fileId,
+    };
+  }
+
   @Post('message-attachment')
   @UseInterceptors(
     FileInterceptor('file', { limits: { fileSize: 20 * 1024 * 1024 } }),

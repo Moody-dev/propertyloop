@@ -300,6 +300,7 @@ model User {
   feedLikes     FeedLike[]     @relation("FeedLikes")
   feedSaves     FeedSave[]     @relation("FeedSaves")
   feedPollVotes FeedPollVote[] @relation("FeedPollVotes")
+  feedReports   FeedReport[]   @relation("FeedReports")
   following     UserFollow[]   @relation("Following")
   followers     UserFollow[]   @relation("Followers")
 
@@ -1427,6 +1428,7 @@ model FeedPost {
   likes    FeedLike[]
   saves    FeedSave[]
   comments FeedComment[]
+  reports  FeedReport[]
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -1435,6 +1437,21 @@ model FeedPost {
   @@index([createdAt])
   @@index([authorId])
   @@index([type])
+}
+
+model FeedReport {
+  id         String       @id @default(cuid())
+  postId     String
+  post       FeedPost     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  reporterId String?
+  reporter   User?        @relation("FeedReports", fields: [reporterId], references: [id], onDelete: SetNull)
+  reason     String?
+  status     ReportStatus @default(PENDING)
+
+  createdAt DateTime @default(now())
+
+  @@unique([postId, reporterId])
+  @@index([status])
 }
 
 model FeedPollOption {
