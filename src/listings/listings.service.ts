@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -282,6 +283,21 @@ export class ListingsService {
         errName: err?.name,
         stack: err?.stack,
       });
+
+      // Turn the common, user-fixable failures into a clear 400 with a
+      // friendly message instead of a raw 500 "Internal server error".
+      if (err?.name === 'PrismaClientValidationError') {
+        throw new BadRequestException(
+          "We couldn't publish your listing — some details look incomplete or invalid. Please double-check each field and try again.",
+        );
+      }
+      if (err?.code === 'P2002') {
+        throw new BadRequestException(
+          'A listing with these exact details already exists. Try changing the title, then post again.',
+        );
+      }
+      // Anything genuinely unexpected stays a 500; the frontend shows a warm,
+      // reassuring fallback for those.
       throw err;
     }
   }
