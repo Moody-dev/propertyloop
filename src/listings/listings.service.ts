@@ -229,7 +229,9 @@ export class ListingsService {
           location: dto.location,
           beds: dto.beds,
           baths: dto.baths,
-          sqft: dto.sqft,
+          // sqft is optional on input but the column is required — default to
+          // an empty string when the agent leaves size blank.
+          sqft: dto.sqft ?? '',
           yearBuilt: dto.yearBuilt,
           description: dto.description,
           features: dto.features,
