@@ -395,6 +395,30 @@ export class AgentsService {
     };
   }
 
+  /** Past subscription charges for the current agent, newest first. */
+  async getSubscriptionPayments(userId: string) {
+    const profile = await this.prisma.agentProfile.findUnique({
+      where: { userId },
+      select: { id: true },
+    });
+    if (!profile) throw new ForbiddenException('Agent profile not found');
+
+    return this.prisma.subscriptionPayment.findMany({
+      where: { agentProfileId: profile.id },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+      select: {
+        id: true,
+        tier: true,
+        amountKobo: true,
+        status: true,
+        billingPeriodStart: true,
+        billingPeriodEnd: true,
+        createdAt: true,
+      },
+    });
+  }
+
   async initializeSubscriptionCheckout(
     userId: string,
     tier: 'STANDARD' | 'PRO',

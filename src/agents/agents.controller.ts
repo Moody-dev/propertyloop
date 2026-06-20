@@ -70,6 +70,13 @@ export class AgentsController {
 
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.AGENT)
+  @Get('me/subscription/payments')
+  getSubscriptionPayments(@CurrentUser() user: CurrentUserData) {
+    return this.agentsService.getSubscriptionPayments(user.id);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.AGENT)
   @Post('me/subscription/checkout')
   initCheckout(
     @CurrentUser() user: CurrentUserData,
