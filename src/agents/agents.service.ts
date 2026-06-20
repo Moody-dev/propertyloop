@@ -416,7 +416,7 @@ export class AgentsService {
       );
     }
 
-    const amountKobo = tier === 'PRO' ? 1_200_000 : 500_000; // ₦12,000 / ₦5,000
+    const amountKobo = tier === 'PRO' ? 2_000_000 : 500_000; // ₦20,000 (Premium) / ₦5,000 (Standard)
     const reference = `PLSUB-${user.agentProfile.id}-${tier}-${Date.now()}`;
     const frontendUrl =
       this.configService.get<string>('FRONTEND_URL') ||
