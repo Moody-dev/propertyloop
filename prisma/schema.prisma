@@ -211,6 +211,7 @@ enum ReportTargetType {
 }
 
 enum SubscriptionTier {
+  FREE
   FOUNDING
   STANDARD
   PRO

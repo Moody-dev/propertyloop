@@ -13,6 +13,7 @@ import {
   SubscriptionStatus,
   ListingStatus,
 } from '../../generated/prisma/client';
+import { FREE_LISTING_CAP } from '../listings/listing-limits';
 
 @Injectable()
 export class PaymentsService {
@@ -579,20 +580,44 @@ export class PaymentsService {
     });
     if (!profile) return;
 
-    // Mark LAPSED and pause every active listing immediately. Renewing the
-    // subscription will flip listings back to ACTIVE in _activateSubscription.
-    await this.prisma.$transaction([
-      this.prisma.agentProfile.update({
-        where: { id: profile.id },
-        data: { subscriptionStatus: SubscriptionStatus.LAPSED },
-      }),
-      this.prisma.listing.updateMany({
-        where: { agentId: profile.userId, status: ListingStatus.ACTIVE },
-        data: { status: ListingStatus.PAUSED },
-      }),
-    ]);
+    // Mark LAPSED but KEEP the paid tier — Paystack may retry the charge, and a
+    // successful retry restores the paid tier in handleSubscriptionRenewal
+    // (which reads tier off the profile). We keep the FREE allowance of active
+    // listings visible and pause the rest; if the retries are exhausted,
+    // Paystack fires subscription.disable → handleSubscriptionDisabled, which
+    // finalises the downgrade to FREE.
+    await this.prisma.agentProfile.update({
+      where: { id: profile.id },
+      data: { subscriptionStatus: SubscriptionStatus.LAPSED },
+    });
+    await this._keepFreeAllowanceActive(profile.userId);
 
-    console.log(`Agent ${profile.id} marked LAPSED after failed charge`);
+    console.log(
+      `Agent ${profile.id} LAPSED after failed charge — kept ${FREE_LISTING_CAP} active`,
+    );
+  }
+
+  /**
+   * Drop an agent to the FREE allowance of active listings: keep the most
+   * recent FREE_LISTING_CAP active listings, pause the rest. Used when a
+   * subscription lapses or is cancelled.
+   */
+  private async _keepFreeAllowanceActive(userId: string): Promise<void> {
+    const keep = await this.prisma.listing.findMany({
+      where: { agentId: userId, status: ListingStatus.ACTIVE },
+      orderBy: { createdAt: 'desc' },
+      take: FREE_LISTING_CAP,
+      select: { id: true },
+    });
+    const keepIds = keep.map((l) => l.id);
+    await this.prisma.listing.updateMany({
+      where: {
+        agentId: userId,
+        status: ListingStatus.ACTIVE,
+        id: { notIn: keepIds },
+      },
+      data: { status: ListingStatus.PAUSED },
+    });
   }
 
   /** Fires when a subscription is cancelled/disabled on Paystack side */
@@ -605,10 +630,20 @@ export class PaymentsService {
     });
     if (!profile) return;
 
+    // Final downgrade: the subscription is gone for good, so move the agent to
+    // the FREE plan (ACTIVE so their free 3 listings stay usable), drop the
+    // Paystack subscription handle, and pause anything beyond the free cap.
     await this.prisma.agentProfile.update({
       where: { id: profile.id },
-      data: { subscriptionStatus: SubscriptionStatus.CANCELLED },
+      data: {
+        subscriptionTier: SubscriptionTier.FREE,
+        subscriptionStatus: SubscriptionStatus.ACTIVE,
+        subscriptionRenewsAt: null,
+        paystackSubscriptionCode: null,
+        paystackEmailToken: null,
+      },
     });
+    await this._keepFreeAllowanceActive(profile.userId);
   }
 
   private async _activateSubscription(opts: {

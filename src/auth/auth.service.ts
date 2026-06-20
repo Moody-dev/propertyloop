@@ -15,7 +15,6 @@ import {
   Role,
   SubscriptionStatus,
   SubscriptionTier,
-  UserType,
 } from '../../generated/prisma/client';
 import { SignupDto } from './dto/signup.dto';
 import { LoginDto } from './dto/login.dto';
@@ -129,6 +128,12 @@ export class AuthService {
               agencyName: dto.agent!.agencyName,
               licenseNumber: dto.agent!.licenseNumber,
               businessAddress: dto.agent!.businessAddress,
+              // New agents start on the FREE tier (capped at 3 active
+              // listings). Waitlisted/early agents get upgraded to the
+              // free-forever FOUNDING tier below; everyone else pays to lift
+              // the cap. Status is ACTIVE so the free 3 listings are usable.
+              subscriptionTier: SubscriptionTier.FREE,
+              subscriptionStatus: SubscriptionStatus.ACTIVE,
             },
           },
         }),
@@ -144,12 +149,9 @@ export class AuthService {
       },
     });
 
-    // Founding-tier grant: if this is an agent signing up with an email that's
-    // on the original PropertyLoop waitlist, give them the free-forever tier.
-    // The marketing site promises this to anyone holding a waitlist invite.
-    if (dto.role === Role.AGENT) {
-      await this.grantFoundingIfWaitlisted(user.id, user.email);
-    }
+    // NOTE: The free-forever FOUNDING tier is now frozen to accounts that
+    // already hold it — new signups (waitlisted or not) start on FREE (3
+    // listings) and pay to lift the cap. See agentProfile.create above.
 
     // Issue email verification token (fire-and-forget email)
     await this.sendEmailVerification(user.id, user.email, user.name);
@@ -556,38 +558,6 @@ export class AuthService {
 
     await this.sendEmailVerification(user.id, user.email, user.name);
     return { success: true };
-  }
-
-  /**
-   * If an agent signs up with an email present on the WaitlistEntry table
-   * (REAL_ESTATE_AGENT entries), grant them the FOUNDING tier with ACTIVE
-   * status — that's the "free forever" promise from the launch waitlist.
-   * Idempotent: safe to call multiple times.
-   */
-  private async grantFoundingIfWaitlisted(userId: string, email: string) {
-    const entry = await this.prisma.waitlistEntry.findUnique({
-      where: { email: email.toLowerCase() },
-      select: { id: true, type: true, activated: true },
-    });
-    if (!entry || entry.type !== UserType.REAL_ESTATE_AGENT) return;
-
-    await this.prisma.$transaction([
-      this.prisma.agentProfile.update({
-        where: { userId },
-        data: {
-          subscriptionTier: SubscriptionTier.FOUNDING,
-          subscriptionStatus: SubscriptionStatus.ACTIVE,
-        },
-      }),
-      ...(entry.activated
-        ? []
-        : [
-            this.prisma.waitlistEntry.update({
-              where: { id: entry.id },
-              data: { activated: true, activatedAt: new Date() },
-            }),
-          ]),
-    ]);
   }
 
   private async sendEmailVerification(
