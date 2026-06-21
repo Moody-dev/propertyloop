@@ -47,7 +47,20 @@ async function bootstrap() {
   // the original HTTPS scheme (used to set SameSite=None; Secure cookies) and
   // req.ip is the real client IP (used for rate limiting).
   app.getHttpAdapter().getInstance().set('trust proxy', 1);
-  app.use(json({ limit: '100mb' }));
+  // Capture the raw request body on the parser that actually reads the stream.
+  // Paystack webhook signatures are an HMAC over the EXACT bytes they send, so
+  // verification must run on the raw body, not re-serialized JSON. This manual
+  // json() parser consumes the stream before Nest's built-in rawBody capture
+  // can, so we stash the buffer here — otherwise @RawBody() on /payments/webhook
+  // is empty and every webhook fails signature verification silently.
+  app.use(
+    json({
+      limit: '100mb',
+      verify: (req, _res, buf: Buffer) => {
+        (req as unknown as { rawBody?: Buffer }).rawBody = buf;
+      },
+    }),
+  );
   app.use(urlencoded({ limit: '100mb', extended: true }));
   app.use(cookieParser());
   app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
