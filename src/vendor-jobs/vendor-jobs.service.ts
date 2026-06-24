@@ -41,6 +41,12 @@ export class VendorJobsService {
   // ─── Booking creation (buyer → vendor) ───────────────────────────────────
 
   async createBooking(dto: CreateBookingDto, buyerUserId?: string) {
+    // A vendor can't book their own service — it would let them inflate their
+    // own job stats and run money through their own escrow.
+    if (buyerUserId && buyerUserId === dto.vendorId) {
+      throw new BadRequestException('You cannot book your own service');
+    }
+
     const vendor = await this.prisma.user.findFirst({
       where: {
         id: dto.vendorId,
