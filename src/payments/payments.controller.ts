@@ -6,6 +6,7 @@ import {
   Body,
   Headers,
   HttpCode,
+  Query,
   UseGuards,
   RawBody,
 } from '@nestjs/common';
@@ -96,6 +97,7 @@ export class PaymentsController {
       );
     } else if (event.event === 'transfer.failed') {
       console.error(`Transfer failed: ${event.data.transfer_code}`);
+      await this.paymentsService.handleTransferFailed(event.data.transfer_code);
     }
 
     return { received: true };
@@ -105,6 +107,17 @@ export class PaymentsController {
   @Get('banks')
   async listBanks() {
     return this.paymentsService.listBanks();
+  }
+
+  // Confirm the real account holder name before the vendor saves/pays to it.
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.VENDOR)
+  @Get('resolve-account')
+  async resolveAccount(
+    @Query('account_number') accountNumber: string,
+    @Query('bank_code') bankCode: string,
+  ) {
+    return this.paymentsService.resolveBankAccount(accountNumber, bankCode);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -128,5 +141,14 @@ export class PaymentsController {
   @Get('bank-account')
   async getBankAccount(@CurrentUser() user: CurrentUserData) {
     return this.paymentsService.getBankAccount(user.id);
+  }
+
+  // Vendor moves their available in-app balance to their bank.
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.VENDOR)
+  @Post('withdraw')
+  @HttpCode(200)
+  async withdraw(@CurrentUser() user: CurrentUserData) {
+    return this.paymentsService.withdrawAvailable(user.id);
   }
 }

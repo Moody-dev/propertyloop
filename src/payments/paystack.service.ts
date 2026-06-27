@@ -83,6 +83,18 @@ export class PaystackService {
     return response.data.data;
   }
 
+  // Look up the real account holder name for an account number + bank, so the
+  // vendor can confirm it before we save/pay anything to it.
+  async resolveAccount(
+    accountNumber: string,
+    bankCode: string,
+  ): Promise<{ account_number: string; account_name: string }> {
+    const response = await this.axiosInstance.get('/bank/resolve', {
+      params: { account_number: accountNumber, bank_code: bankCode },
+    });
+    return response.data.data;
+  }
+
   async refundTransaction(
     transactionReference: string,
   ): Promise<{ refund_url?: string }> {

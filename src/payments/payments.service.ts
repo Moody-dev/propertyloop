@@ -7,6 +7,7 @@ import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { PaystackService } from './paystack.service';
 import {
+  EarningStatus,
   EscrowStatus,
   JobStatus,
   SubscriptionTier,
@@ -111,6 +112,21 @@ export class PaymentsService {
         },
       });
 
+      // Surface the money on the vendor's dashboard right away as "in escrow"
+      // (PENDING) — it isn't theirs to withdraw yet, but they can see it coming.
+      await this.prisma.vendorEarning.upsert({
+        where: { jobId: job.id },
+        create: {
+          vendorUserId: job.vendorUserId,
+          jobId: job.id,
+          jobTitle: job.title,
+          clientName: job.clientName,
+          amount: job.vendorFee,
+          status: EarningStatus.PENDING,
+        },
+        update: {}, // already exists → leave its status as-is
+      });
+
       console.log(`Escrow LOCKED for job ${job.id} via reference ${reference}`);
     } catch (error: any) {
       console.error(
@@ -138,48 +154,109 @@ export class PaymentsService {
       throw new BadRequestException('Escrow is not locked');
     }
 
-    // Fetch vendor's bank account
-    const bankAccount = await this.prisma.vendorBankAccount.findUnique({
-      where: { vendorUserId: job.vendorUserId },
-    });
-
-    if (!bankAccount) {
-      throw new BadRequestException(
-        'Vendor has not set up a bank account for payouts. Contact the vendor.',
-      );
-    }
-
-    try {
-      const vendorFeeKobo = job.vendorFee * 100;
-      const transferReference = `PLPAY-${jobId}-${Date.now()}`;
-
-      const { transfer_code } = await this.paystackService.initiateTransfer({
-        source: 'balance',
-        amount: vendorFeeKobo,
-        recipient: bankAccount.paystackRecipientCode,
-        reason: `Payment for job: ${job.title}`,
-        reference: transferReference,
-      });
-
-      // Update job — set status to PAID and escrowStatus to RELEASED (optimistic)
-      await this.prisma.vendorJob.update({
+    // Wallet model: releasing escrow doesn't push money to the bank. It moves
+    // the vendor fee into the vendor's in-app balance (AVAILABLE), which they
+    // later withdraw themselves. No bank account is required at this step.
+    await this.prisma.$transaction([
+      this.prisma.vendorJob.update({
         where: { id: jobId },
         data: {
           status: JobStatus.PAID,
           escrowStatus: EscrowStatus.RELEASED,
           confirmedAt: new Date(),
-          transferCode: transfer_code,
         },
-      });
+      }),
+      this.prisma.vendorEarning.upsert({
+        where: { jobId },
+        create: {
+          vendorUserId: job.vendorUserId,
+          jobId,
+          jobTitle: job.title,
+          clientName: job.clientName,
+          amount: job.vendorFee,
+          status: EarningStatus.AVAILABLE,
+        },
+        update: { status: EarningStatus.AVAILABLE },
+      }),
+    ]);
 
-      console.log(
-        `Escrow RELEASED for job ${jobId}, transfer initiated: ${transfer_code}`,
-      );
-    } catch (error: any) {
+    console.log(
+      `Escrow RELEASED for job ${jobId} → vendor balance (AVAILABLE) ${job.vendorFee}`,
+    );
+  }
+
+  // ─── Vendor wallet withdrawal ─────────────────────────────────────────────
+
+  /**
+   * Vendor moves their AVAILABLE balance to their bank. Initiates one Paystack
+   * transfer per released earning (so each reconciles via the existing
+   * transfer webhook) and flips those earnings to PROCESSING. The amount lands
+   * as PAID once Paystack fires transfer.success.
+   */
+  async withdrawAvailable(vendorUserId: string) {
+    const bankAccount = await this.prisma.vendorBankAccount.findUnique({
+      where: { vendorUserId },
+    });
+    if (!bankAccount) {
       throw new BadRequestException(
-        `Failed to release escrow: ${error.response?.data?.message || error.message}`,
+        'Add a payout bank account before withdrawing.',
       );
     }
+
+    const available = await this.prisma.vendorEarning.findMany({
+      where: { vendorUserId, status: EarningStatus.AVAILABLE },
+    });
+    if (available.length === 0) {
+      throw new BadRequestException('You have no funds available to withdraw.');
+    }
+
+    let withdrawn = 0;
+    let failures = 0;
+    for (const earning of available) {
+      try {
+        const transferReference = `PLWD-${earning.jobId}-${Date.now()}`;
+        const { transfer_code } = await this.paystackService.initiateTransfer({
+          source: 'balance',
+          amount: earning.amount * 100,
+          recipient: bankAccount.paystackRecipientCode,
+          reason: `Payout for job: ${earning.jobTitle}`,
+          reference: transferReference,
+        });
+
+        await this.prisma.$transaction([
+          this.prisma.vendorEarning.update({
+            where: { id: earning.id },
+            data: { status: EarningStatus.PROCESSING },
+          }),
+          // Correlate the eventual transfer.success webhook back to this job.
+          this.prisma.vendorJob.update({
+            where: { id: earning.jobId },
+            data: { transferCode: transfer_code },
+          }),
+        ]);
+        withdrawn += earning.amount;
+      } catch (error: any) {
+        failures += 1;
+        console.error(
+          `Withdrawal transfer failed for earning ${earning.id}:`,
+          error.response?.data?.message || error.message,
+        );
+      }
+    }
+
+    if (withdrawn === 0) {
+      throw new BadRequestException(
+        'Could not start your withdrawal. Please try again shortly.',
+      );
+    }
+
+    return {
+      success: true,
+      amount: withdrawn,
+      count: available.length - failures,
+      bankName: bankAccount.bankName,
+      accountNumber: bankAccount.accountNumber,
+    };
   }
 
   async handleTransferSuccess(transferCode: string): Promise<void> {
@@ -220,6 +297,22 @@ export class PaymentsService {
     }
   }
 
+  /**
+   * A withdrawal transfer bounced — put the money back as AVAILABLE so the
+   * vendor can retry, rather than leaving it stuck in PROCESSING.
+   */
+  async handleTransferFailed(transferCode: string): Promise<void> {
+    const job = await this.prisma.vendorJob.findFirst({
+      where: { transferCode },
+    });
+    if (!job) return;
+    await this.prisma.vendorEarning.updateMany({
+      where: { jobId: job.id, status: EarningStatus.PROCESSING },
+      data: { status: EarningStatus.AVAILABLE },
+    });
+    console.warn(`Transfer failed for job ${job.id} → earning back to AVAILABLE`);
+  }
+
   async resolveDisputeRelease(jobId: string): Promise<void> {
     const job = await this.prisma.vendorJob.findUnique({
       where: { id: jobId },
@@ -230,47 +323,35 @@ export class PaymentsService {
       throw new BadRequestException('Job is not in disputed state');
     }
 
-    // Admin override — call releaseEscrow without buyer check
-    const bankAccount = await this.prisma.vendorBankAccount.findUnique({
-      where: { vendorUserId: job.vendorUserId },
-    });
-
-    if (!bankAccount) {
-      throw new BadRequestException(
-        'Vendor has not set up a bank account for payouts',
-      );
-    }
-
-    try {
-      const vendorFeeKobo = job.vendorFee * 100;
-      const transferReference = `PLPAY-${jobId}-${Date.now()}`;
-
-      const { transfer_code } = await this.paystackService.initiateTransfer({
-        source: 'balance',
-        amount: vendorFeeKobo,
-        recipient: bankAccount.paystackRecipientCode,
-        reason: `Dispute resolution - payment for job: ${job.title}`,
-        reference: transferReference,
-      });
-
-      await this.prisma.vendorJob.update({
+    // Resolved in the vendor's favour: same as a normal release — credit the
+    // vendor's in-app balance (AVAILABLE). They withdraw it themselves, so no
+    // bank account is required here and no transfer is fired.
+    await this.prisma.$transaction([
+      this.prisma.vendorJob.update({
         where: { id: jobId },
         data: {
           status: JobStatus.PAID,
           escrowStatus: EscrowStatus.RELEASED,
           confirmedAt: new Date(),
-          transferCode: transfer_code,
         },
-      });
+      }),
+      this.prisma.vendorEarning.upsert({
+        where: { jobId },
+        create: {
+          vendorUserId: job.vendorUserId,
+          jobId,
+          jobTitle: job.title,
+          clientName: job.clientName,
+          amount: job.vendorFee,
+          status: EarningStatus.AVAILABLE,
+        },
+        update: { status: EarningStatus.AVAILABLE },
+      }),
+    ]);
 
-      console.log(
-        `Admin resolved dispute - Escrow RELEASED for job ${jobId}, transfer: ${transfer_code}`,
-      );
-    } catch (error: any) {
-      throw new BadRequestException(
-        `Failed to resolve dispute (release): ${error.response?.data?.message || error.message}`,
-      );
-    }
+    console.log(
+      `Admin resolved dispute - Escrow RELEASED for job ${jobId} → vendor balance`,
+    );
   }
 
   async resolveDisputeRefund(jobId: string): Promise<void> {
@@ -289,13 +370,20 @@ export class PaymentsService {
       // Call Paystack refund API
       await this.paystackService.refundTransaction(job.escrowId);
 
-      await this.prisma.vendorJob.update({
-        where: { id: jobId },
-        data: {
-          escrowStatus: EscrowStatus.REFUNDED,
-          refundedAt: new Date(),
-        },
-      });
+      await this.prisma.$transaction([
+        this.prisma.vendorJob.update({
+          where: { id: jobId },
+          data: {
+            escrowStatus: EscrowStatus.REFUNDED,
+            refundedAt: new Date(),
+          },
+        }),
+        // Money went back to the buyer — drop the vendor's pending earning so
+        // it stops counting toward their "in escrow" balance.
+        this.prisma.vendorEarning.deleteMany({
+          where: { jobId, status: EarningStatus.PENDING },
+        }),
+      ]);
 
       console.log(`Admin resolved dispute - Escrow REFUNDED for job ${jobId}`);
     } catch (error: any) {
@@ -381,6 +469,29 @@ export class PaymentsService {
 
   async listBanks(): Promise<{ id: number; name: string; code: string }[]> {
     return this.paystackService.listBanks();
+  }
+
+  /** Resolve the account holder name for a number + bank (pre-save check). */
+  async resolveBankAccount(
+    accountNumber: string,
+    bankCode: string,
+  ): Promise<{ accountNumber: string; accountName: string }> {
+    if (!/^[0-9]{10}$/.test(accountNumber ?? '')) {
+      throw new BadRequestException('Enter a valid 10-digit account number.');
+    }
+    if (!bankCode) {
+      throw new BadRequestException('Pick a bank first.');
+    }
+    try {
+      const { account_number, account_name } =
+        await this.paystackService.resolveAccount(accountNumber, bankCode);
+      return { accountNumber: account_number, accountName: account_name };
+    } catch (error: any) {
+      throw new BadRequestException(
+        error.response?.data?.message ||
+          'Could not verify this account. Check the number and bank.',
+      );
+    }
   }
 
   async getJobByEscrowId(escrowId: string): Promise<{

@@ -50,8 +50,15 @@ export class VendorEarningsService {
     const startOfYear = new Date(startOfMonth);
     startOfYear.setMonth(0);
 
-    const [paidAgg, pendingAgg, processingAgg, thisMonthAgg, thisYearAgg, count] =
-      await Promise.all([
+    const [
+      paidAgg,
+      pendingAgg,
+      processingAgg,
+      availableAgg,
+      thisMonthAgg,
+      thisYearAgg,
+      count,
+    ] = await Promise.all([
         this.prisma.vendorEarning.aggregate({
           where: { vendorUserId, status: EarningStatus.PAID },
           _sum: { amount: true },
@@ -64,6 +71,11 @@ export class VendorEarningsService {
         }),
         this.prisma.vendorEarning.aggregate({
           where: { vendorUserId, status: EarningStatus.PROCESSING },
+          _sum: { amount: true },
+          _count: true,
+        }),
+        this.prisma.vendorEarning.aggregate({
+          where: { vendorUserId, status: EarningStatus.AVAILABLE },
           _sum: { amount: true },
           _count: true,
         }),
@@ -89,12 +101,14 @@ export class VendorEarningsService {
     const paid = paidAgg._sum.amount ?? 0;
     const pending = pendingAgg._sum.amount ?? 0;
     const processing = processingAgg._sum.amount ?? 0;
+    const available = availableAgg._sum.amount ?? 0;
 
     return {
-      total: paid + pending + processing,
+      total: paid + pending + processing + available,
       paid,
       pending,
       processing,
+      available,
       thisMonth: thisMonthAgg._sum.amount ?? 0,
       thisYear: thisYearAgg._sum.amount ?? 0,
       count,

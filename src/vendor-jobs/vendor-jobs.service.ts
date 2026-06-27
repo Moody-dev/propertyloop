@@ -124,7 +124,13 @@ export class VendorJobsService {
       this.prisma.vendorJob.count({ where }),
     ]);
 
-    return { items, total, page, limit, pages: Math.ceil(total / limit) };
+    return {
+      items: items.map((j) => this.serialize(j)),
+      total,
+      page,
+      limit,
+      pages: Math.ceil(total / limit),
+    };
   }
 
   async listForBuyer(buyerUserId: string, dto: ListJobsDto) {
@@ -258,15 +264,16 @@ export class VendorJobsService {
       userId: job.vendorUserId,
       type: NotificationType.JOB_CONFIRMED,
       title: 'Payment released',
-      body: `${job.clientName} confirmed ${job.title}. ${nairaLabel(job.vendorFee)} is on its way.`,
+      body: `${job.clientName} confirmed ${job.title}. ${nairaLabel(job.vendorFee)} is now in your balance — withdraw anytime.`,
       data: { jobId },
     });
 
-    // Fetch and return the updated job
-    return this.prisma.vendorJob.findUnique({
+    // Fetch and return the updated job (status projects to CONFIRMED).
+    const fresh = await this.prisma.vendorJob.findUnique({
       where: { id: jobId },
       include: { vendor: { include: { vendorProfile: true } } },
     });
+    return fresh ? this.serialize(fresh) : null;
   }
 
   async dispute(buyerUserId: string, jobId: string, dto: DisputeJobDto) {
@@ -320,7 +327,8 @@ export class VendorJobsService {
       data: { jobId: job.id },
     });
 
-    return updated;
+    // Project status to DISPUTED for the client (escrowStatus drives it).
+    return this.serialize(updated);
   }
 
   // ─── Dispute thread ──────────────────────────────────────────────────────
@@ -387,6 +395,16 @@ export class VendorJobsService {
     return job;
   }
 
+  // The DB job status is PENDING→ACCEPTED→IN_PROGRESS→COMPLETED→PAID, and a
+  // dispute lives on escrowStatus (the job stays COMPLETED). The app speaks a
+  // richer status vocabulary, so we project to it at the serialization edge:
+  // a released job reads as CONFIRMED, and a disputed one as DISPUTED.
+  private clientStatus(job: any): string {
+    if (job.escrowStatus === EscrowStatus.DISPUTED) return 'DISPUTED';
+    if (job.status === JobStatus.PAID) return 'CONFIRMED';
+    return job.status;
+  }
+
   private serialize(job: any) {
     const vendor = job.vendor;
     return {
@@ -395,7 +413,7 @@ export class VendorJobsService {
       description: job.description,
       address: job.address,
       category: job.category,
-      status: job.status,
+      status: this.clientStatus(job),
       clientName: job.clientName,
       clientPhone: job.clientPhone,
       clientEmail: job.clientEmail,

@@ -120,6 +120,9 @@ enum EarningStatus {
   PAID
   PENDING
   PROCESSING
+  // Released from escrow into the vendor's in-app balance. Withdrawable, but
+  // not yet sent to their bank — the vendor moves it out via "Withdraw".
+  AVAILABLE
 }
 
 enum OrderPaymentMethod {

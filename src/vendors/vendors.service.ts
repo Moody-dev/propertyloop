@@ -216,6 +216,7 @@ export class VendorsService {
       totalJobs,
       earningsPaidAgg,
       earningsPendingAgg,
+      earningsAvailableAgg,
       earningsThisMonthAgg,
       reviewsCount,
       reviewsAvg,
@@ -244,8 +245,13 @@ export class VendorsService {
       this.prisma.vendorEarning.aggregate({
         where: {
           vendorUserId: userId,
+          // "In escrow" on the dashboard: locked, or clearing to the bank.
           status: { in: [EarningStatus.PENDING, EarningStatus.PROCESSING] },
         },
+        _sum: { amount: true },
+      }),
+      this.prisma.vendorEarning.aggregate({
+        where: { vendorUserId: userId, status: EarningStatus.AVAILABLE },
         _sum: { amount: true },
       }),
       this.prisma.vendorEarning.aggregate({
@@ -268,6 +274,7 @@ export class VendorsService {
 
     const paid = earningsPaidAgg._sum.amount ?? 0;
     const pending = earningsPendingAgg._sum.amount ?? 0;
+    const available = earningsAvailableAgg._sum.amount ?? 0;
     const thisMonth = earningsThisMonthAgg._sum.amount ?? 0;
 
     return {
@@ -284,9 +291,10 @@ export class VendorsService {
         total: totalJobs,
       },
       earnings: {
-        total: paid + pending,
+        total: paid + pending + available,
         paid,
         pending,
+        available,
         thisMonth,
       },
       reviews: {
