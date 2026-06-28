@@ -27,6 +27,7 @@ export class PaymentsService {
   async initializeJobPayment(
     jobId: string,
     buyerEmail: string,
+    returnUrl?: string,
   ): Promise<{ paymentUrl: string; reference: string }> {
     const job = await this.prisma.vendorJob.findUnique({
       where: { id: jobId },
@@ -41,9 +42,15 @@ export class PaymentsService {
 
     const amountKobo = job.escrowAmount * 100;
     const reference = `PLJOB-${jobId}-${Date.now()}`;
+    // When the mobile app initiates payment it passes its own deep-link return
+    // URL so Paystack sends the user straight back into the app. Web/no-URL
+    // callers fall back to the web payment-callback page.
     const frontendUrl =
       this.configService.get<string>('FRONTEND_URL') || 'http://localhost:5173';
-    const callbackUrl = `${frontendUrl}/payment-callback?jobId=${jobId}`;
+    const callbackUrl =
+      returnUrl && returnUrl.trim()
+        ? returnUrl
+        : `${frontendUrl}/payment-callback?jobId=${jobId}`;
 
     try {
       const { authorization_url } =

@@ -34,13 +34,21 @@ export class PaymentsController {
   async initializePayment(
     @Param('jobId') jobId: string,
     @CurrentUser() user: CurrentUserData,
+    @Body() body: { returnUrl?: string } = {},
   ) {
-    return this.paymentsService.initializeJobPayment(jobId, user.email);
+    return this.paymentsService.initializeJobPayment(
+      jobId,
+      user.email,
+      body?.returnUrl,
+    );
   }
 
   @UseGuards(JwtAuthGuard)
   @Get('verify/:reference')
   async verifyPayment(@Param('reference') reference: string) {
+    // Actively verify with Paystack and lock escrow if the charge succeeded,
+    // so the app confirms on return without waiting on the webhook. Idempotent.
+    await this.paymentsService.handleChargeSuccess(reference);
     const job = await this.paymentsService.getJobByEscrowId(reference);
     return { escrowStatus: job?.escrowStatus || 'NONE', jobId: job?.id };
   }
