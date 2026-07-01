@@ -390,6 +390,12 @@ export class PaymentsService {
         this.prisma.vendorEarning.deleteMany({
           where: { jobId, status: EarningStatus.PENDING },
         }),
+        // The job was counted toward the vendor's completed total when it was
+        // marked complete; a refund reverses that (no longer a delivered job).
+        this.prisma.vendorProfile.update({
+          where: { userId: job.vendorUserId },
+          data: { jobsCount: { decrement: 1 } },
+        }),
       ]);
 
       console.log(`Admin resolved dispute - Escrow REFUNDED for job ${jobId}`);

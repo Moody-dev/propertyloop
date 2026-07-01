@@ -217,15 +217,24 @@ export class VendorJobsService {
     if (job.status !== JobStatus.IN_PROGRESS && job.status !== JobStatus.ACCEPTED) {
       throw new BadRequestException('Only active jobs can be marked complete');
     }
-    const updated = await this.prisma.vendorJob.update({
-      where: { id: jobId },
-      data: {
-        status: JobStatus.COMPLETED,
-        completedAt: new Date(),
-        completionNotes: dto.completionNotes,
-        completionProofImages: dto.completionProofImages ?? [],
-      },
-    });
+    // Guarded above (only active jobs reach here), so this runs once per job —
+    // count it toward the vendor's completed-jobs total the moment the work is
+    // delivered. Reversed in payments.resolveDisputeRefund if it's refunded.
+    const [updated] = await this.prisma.$transaction([
+      this.prisma.vendorJob.update({
+        where: { id: jobId },
+        data: {
+          status: JobStatus.COMPLETED,
+          completedAt: new Date(),
+          completionNotes: dto.completionNotes,
+          completionProofImages: dto.completionProofImages ?? [],
+        },
+      }),
+      this.prisma.vendorProfile.update({
+        where: { userId: vendorUserId },
+        data: { jobsCount: { increment: 1 } },
+      }),
+    ]);
 
     if (job.buyerUserId) {
       void this.notifications.notify({
@@ -384,6 +393,184 @@ export class VendorJobsService {
     return this.getDispute(jobId, userId);
   }
 
+  // ─── Admin dispute mediation ─────────────────────────────────────────────
+
+  async adminListDisputes(opts: {
+    page: number;
+    limit: number;
+    status?: string;
+  }) {
+    const { page, limit } = opts;
+    const skip = (page - 1) * limit;
+
+    // `open` (default) = still DISPUTED; `resolved` = a dispute that was settled
+    // (released/refunded after being disputed); `all` = anything ever disputed.
+    const where: Prisma.VendorJobWhereInput =
+      opts.status === 'resolved'
+        ? {
+            disputedAt: { not: null },
+            escrowStatus: {
+              in: [EscrowStatus.RELEASED, EscrowStatus.REFUNDED],
+            },
+          }
+        : opts.status === 'all'
+          ? { disputedAt: { not: null } }
+          : { escrowStatus: EscrowStatus.DISPUTED };
+
+    const [items, total, openTotal] = await Promise.all([
+      this.prisma.vendorJob.findMany({
+        where,
+        orderBy: { disputedAt: 'desc' },
+        skip,
+        take: limit,
+        include: {
+          vendor: true,
+          _count: { select: { disputeMessages: true } },
+        },
+      }),
+      this.prisma.vendorJob.count({ where }),
+      this.prisma.vendorJob.count({
+        where: { escrowStatus: EscrowStatus.DISPUTED },
+      }),
+    ]);
+
+    return {
+      items: items.map((j) => this.serializeDisputeSummary(j)),
+      total,
+      openTotal,
+      page,
+      limit,
+      pages: Math.ceil(total / limit),
+    };
+  }
+
+  async adminGetDispute(jobId: string) {
+    const job = await this.prisma.vendorJob.findUnique({
+      where: { id: jobId },
+      include: {
+        vendor: true,
+        disputeMessages: {
+          orderBy: { createdAt: 'asc' },
+          include: { sender: true },
+        },
+      },
+    });
+    if (!job) throw new NotFoundException('Job not found');
+    if (!job.disputedAt) {
+      throw new BadRequestException('This job has no dispute');
+    }
+    return this.serializeDispute(job);
+  }
+
+  async adminAddDisputeMessage(
+    adminUserId: string,
+    jobId: string,
+    dto: AddDisputeMessageDto,
+  ) {
+    const job = await this.prisma.vendorJob.findUnique({ where: { id: jobId } });
+    if (!job) throw new NotFoundException('Job not found');
+    if (job.escrowStatus !== EscrowStatus.DISPUTED) {
+      throw new BadRequestException('This job is not currently under dispute');
+    }
+
+    await this.prisma.jobDisputeMessage.create({
+      data: {
+        jobId,
+        senderUserId: adminUserId,
+        role: DisputeAuthorRole.ADMIN,
+        body: dto.body,
+        attachments: dto.attachments ?? [],
+      },
+    });
+
+    // Keep both sides looped in when PropertyLoop weighs in.
+    const recipients = [job.vendorUserId, job.buyerUserId].filter(
+      (id): id is string => !!id,
+    );
+    for (const userId of recipients) {
+      void this.notifications.notify({
+        userId,
+        type: NotificationType.JOB_DISPUTED,
+        title: 'PropertyLoop replied to your dispute',
+        body: `Our team responded on ${job.title}. Open the dispute to read it.`,
+        data: { jobId },
+      });
+    }
+
+    return this.adminGetDispute(jobId);
+  }
+
+  async adminResolveDispute(
+    adminUserId: string,
+    jobId: string,
+    outcome: 'release' | 'refund',
+    note?: string,
+  ) {
+    const job = await this.prisma.vendorJob.findUnique({ where: { id: jobId } });
+    if (!job) throw new NotFoundException('Job not found');
+    if (job.escrowStatus !== EscrowStatus.DISPUTED) {
+      throw new BadRequestException('Job is not in disputed state');
+    }
+
+    // Move the money. These also flip job/escrow status and the vendor earning.
+    if (outcome === 'release') {
+      await this.paymentsService.resolveDisputeRelease(jobId);
+    } else {
+      await this.paymentsService.resolveDisputeRefund(jobId);
+    }
+
+    const verdict =
+      outcome === 'release'
+        ? `PropertyLoop resolved this dispute in the vendor's favour — ${nairaLabel(
+            job.vendorFee,
+          )} has been released from escrow.`
+        : `PropertyLoop resolved this dispute in the customer's favour — ${nairaLabel(
+            job.escrowAmount,
+          )} has been refunded.`;
+
+    await this.prisma.jobDisputeMessage.create({
+      data: {
+        jobId,
+        senderUserId: adminUserId,
+        role: DisputeAuthorRole.ADMIN,
+        body: note?.trim() ? `${verdict}\n\n${note.trim()}` : verdict,
+      },
+    });
+
+    // Tell the vendor what happened to their money…
+    void this.notifications.notify({
+      userId: job.vendorUserId,
+      type:
+        outcome === 'release'
+          ? NotificationType.JOB_CONFIRMED
+          : NotificationType.JOB_DISPUTED,
+      title:
+        outcome === 'release'
+          ? 'Dispute resolved — payment released'
+          : 'Dispute resolved — payment refunded',
+      body:
+        outcome === 'release'
+          ? `${job.title}: ${nairaLabel(job.vendorFee)} is now in your balance.`
+          : `${job.title}: the payment was refunded to the customer.`,
+      data: { jobId },
+    });
+    // …and let the customer know too.
+    if (job.buyerUserId) {
+      void this.notifications.notify({
+        userId: job.buyerUserId,
+        type: NotificationType.JOB_DISPUTED,
+        title: 'Dispute resolved',
+        body:
+          outcome === 'release'
+            ? `${job.title}: our team released the payment to the vendor.`
+            : `${job.title}: ${nairaLabel(job.escrowAmount)} has been refunded to you.`,
+        data: { jobId },
+      });
+    }
+
+    return this.adminGetDispute(jobId);
+  }
+
   // ─── Helpers ──────────────────────────────────────────────────────────────
 
   private async assertVendorOwns(vendorUserId: string, jobId: string) {
@@ -477,6 +664,32 @@ export class VendorJobsService {
       thread: (job.disputeMessages ?? []).map((m: any) =>
         this.serializeDisputeMessage(m, job),
       ),
+    };
+  }
+
+  // Compact shape for the admin disputes list (no full thread).
+  private serializeDisputeSummary(job: any) {
+    const deadline = job.disputedAt
+      ? new Date(job.disputedAt.getTime() + DISPUTE_RESPONSE_WINDOW_MS)
+      : null;
+    return {
+      jobId: job.id,
+      jobRef: `SL-${job.id.slice(-8).toUpperCase()}`,
+      escrowStatus: job.escrowStatus,
+      open: job.escrowStatus === EscrowStatus.DISPUTED,
+      reason: job.disputeReason,
+      disputedAt: job.disputedAt,
+      responseDeadline: deadline,
+      amountHeldNaira: job.escrowAmount,
+      vendorFeeNaira: job.vendorFee,
+      platformFeeNaira: job.platformFee,
+      service: job.category,
+      title: job.title,
+      messageCount: job._count?.disputeMessages ?? 0,
+      customer: { name: job.clientName, email: job.clientEmail },
+      vendor: job.vendor
+        ? { id: job.vendor.id, name: job.vendor.name, email: job.vendor.email }
+        : null,
     };
   }
 

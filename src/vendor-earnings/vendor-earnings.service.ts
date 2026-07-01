@@ -32,6 +32,9 @@ export class VendorEarningsService {
               clientName: true,
               category: true,
               scheduledFor: true,
+              // Surfaced so the earnings screen can flag money held by a dispute
+              // (escrow LOCKED→DISPUTED) instead of the generic "awaiting confirm".
+              escrowStatus: true,
             },
           },
         },

@@ -134,54 +134,6 @@ export class AdminService {
     };
   }
 
-  async listDisputes(options: {
-    page: number;
-    limit: number;
-    status?: string;
-  }) {
-    const { page, limit, status } = options;
-    const skip = (page - 1) * limit;
-
-    const where: any = {
-      comment: { not: null },
-    };
-
-    const [items, total] = await Promise.all([
-      this.prisma.vendorReview.findMany({
-        where,
-        select: {
-          id: true,
-          clientName: true,
-          rating: true,
-          comment: true,
-          createdAt: true,
-          vendor: {
-            select: { name: true },
-          },
-        },
-        skip,
-        take: limit,
-        orderBy: { createdAt: 'desc' },
-      }),
-      this.prisma.vendorReview.count({ where }),
-    ]);
-
-    return {
-      items: items.map((item: any) => ({
-        id: item.id,
-        title: `Review: "${item.comment?.substring(0, 50)}..."`,
-        status: item.rating < 3 ? 'open' : 'closed',
-        severity: item.rating < 3 ? 'high' : item.rating < 4 ? 'medium' : 'low',
-        createdAt: item.createdAt,
-        reportedBy: { name: item.clientName },
-      })),
-      total,
-      page,
-      limit,
-      pages: Math.ceil(total / limit),
-    };
-  }
-
   // ─── Listings (admin moderation) ─────────────────────────────────────────
 
   async listListings(options: {
