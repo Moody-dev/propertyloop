@@ -50,6 +50,10 @@ export class VendorsService {
       role: Role.VENDOR,
       isActive: true,
       deletedAt: null,
+      // Only surface vendors who have something bookable — at least one active
+      // (non-archived) service. Keeps dead-end "no services yet" profiles, where
+      // the booking screen's CTA is disabled, out of the marketplace.
+      vendorServices: { some: { active: true } },
       vendorProfile: {
         is: {
           availableForHire: true,
