@@ -55,6 +55,15 @@ export class MessagesController {
     return this.messagesService.createOrFind(user.id, dto);
   }
 
+  /** Find-or-create the current user's PropertyLoop support conversation. */
+  @Post('support')
+  startSupport(@CurrentUser() user: CurrentUserData) {
+    if (!user?.id) {
+      throw new BadRequestException('User not authenticated');
+    }
+    return this.messagesService.startSupport(user.id);
+  }
+
   /** Get total unread message count */
   @Get('unread')
   getUnreadCount(@CurrentUser() user: CurrentUserData) {

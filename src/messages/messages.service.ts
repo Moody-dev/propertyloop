@@ -7,7 +7,11 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { Prisma } from '../../generated/prisma/client';
+import {
+  Prisma,
+  Role,
+  ConversationParticipantRole,
+} from '../../generated/prisma/client';
 import { CreateConversationDto } from './dto/create-conversation.dto';
 import { SendMessageDto } from './dto/send-message.dto';
 import { ListConversationsDto, ListMessagesDto } from './dto/list-conversations.dto';
@@ -19,6 +23,19 @@ import { ChatGateway } from './chat.gateway';
 const PROPERTYLOOP_NAME = 'PropertyLoop';
 const PROPERTYLOOP_AVATAR =
   'https://image2url.com/r2/default/images/1774405533651-13ef5a22-bfcb-4d8e-801e-563f4451c8b0.png';
+
+function mapToConversationRole(role: Role): ConversationParticipantRole {
+  switch (role) {
+    case Role.AGENT:
+      return ConversationParticipantRole.AGENT;
+    case Role.VENDOR:
+      return ConversationParticipantRole.VENDOR;
+    case Role.ADMIN:
+      return ConversationParticipantRole.ADMIN;
+    default:
+      return ConversationParticipantRole.BUYER;
+  }
+}
 
 @Injectable()
 export class MessagesService {
@@ -282,6 +299,36 @@ export class MessagesService {
     }
 
     return { conversationId: conversation.id, created: true };
+  }
+
+  /**
+   * Find-or-create the current user's support conversation with PropertyLoop.
+   * The client never needs to know an admin's id — we resolve the support
+   * admin server-side and reuse createOrFind so admins are masked behind the
+   * PropertyLoop brand in the chat like any other admin conversation.
+   */
+  async startSupport(userId: string) {
+    const me = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { role: true },
+    });
+    if (!me) throw new NotFoundException('User not found');
+
+    // Designated support account = the earliest active admin.
+    const admin = await this.prisma.user.findFirst({
+      where: { role: Role.ADMIN, isActive: true, deletedAt: null },
+      orderBy: { createdAt: 'asc' },
+      select: { id: true },
+    });
+    if (!admin) {
+      throw new NotFoundException('Support is unavailable right now.');
+    }
+
+    return this.createOrFind(userId, {
+      recipientId: admin.id,
+      recipientRole: ConversationParticipantRole.ADMIN,
+      senderRole: mapToConversationRole(me.role),
+    });
   }
 
   // ─── Mark conversation as read ───────────────────────────────────────────
