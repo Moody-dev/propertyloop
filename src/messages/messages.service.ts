@@ -314,7 +314,23 @@ export class MessagesService {
     });
     if (!me) throw new NotFoundException('User not found');
 
-    // Designated support account = the earliest active admin.
+    // If the user already has a support thread (any conversation whose other
+    // participant is an admin), open that one — never spin up a duplicate,
+    // even if a different admin replied. Most-recently-active wins.
+    const existing = await this.prisma.conversationParticipant.findFirst({
+      where: {
+        userId: { not: userId },
+        user: { role: Role.ADMIN },
+        conversation: { participants: { some: { userId } } },
+      },
+      orderBy: { conversation: { updatedAt: 'desc' } },
+      select: { conversationId: true },
+    });
+    if (existing) {
+      return { conversationId: existing.conversationId, created: false };
+    }
+
+    // Otherwise create one with the designated support account = earliest admin.
     const admin = await this.prisma.user.findFirst({
       where: { role: Role.ADMIN, isActive: true, deletedAt: null },
       orderBy: { createdAt: 'asc' },
