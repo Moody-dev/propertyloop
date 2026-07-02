@@ -324,11 +324,21 @@ export class MessagesService {
       throw new NotFoundException('Support is unavailable right now.');
     }
 
-    return this.createOrFind(userId, {
+    const result = await this.createOrFind(userId, {
       recipientId: admin.id,
       recipientRole: ConversationParticipantRole.ADMIN,
       senderRole: mapToConversationRole(me.role),
     });
+
+    // Greet the user from PropertyLoop the first time so the chat opens warm
+    // instead of blank. Sent from the admin, so it's masked as PropertyLoop.
+    if (result.created) {
+      await this.sendMessage(admin.id, result.conversationId, {
+        text: "Hi 👋 Welcome to PropertyLoop support. Tell us what you need help with — you can attach a photo or document too. We usually reply within a few minutes.",
+      });
+    }
+
+    return result;
   }
 
   // ─── Mark conversation as read ───────────────────────────────────────────
