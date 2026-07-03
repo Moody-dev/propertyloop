@@ -262,11 +262,14 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     conversationId: string,
     participantIds: string[],
   ) {
+    // Guard: only notify if the WebSocket server is initialized
+    if (!this.server || !this.server.sockets) return;
+
     for (const userId of participantIds) {
       const socketIds = this.userSockets.get(userId);
       if (socketIds) {
         for (const sid of socketIds) {
-          const sock = this.server.sockets.sockets.get(sid);
+          const sock = this.server.sockets.sockets?.get(sid);
           sock?.join(`convo:${conversationId}`);
         }
       }
