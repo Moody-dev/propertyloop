@@ -1,4 +1,5 @@
 import {
+  Body,
   Controller,
   Post,
   UploadedFile,
@@ -143,6 +144,31 @@ export class UploadController {
       fileName: result.fileName,
       fileId: result.fileId,
     };
+  }
+
+  /**
+   * Presigned direct-to-R2 PUT for a chat attachment. Mobile clients use this
+   * instead of the multipart route below: proxying multipart/form-data through
+   * the API dropped mid-stream on mobile networks ("Network Error"), which is
+   * why image attachments were failing. The bytes go straight to storage.
+   */
+  @Post('message-attachment/presign')
+  async presignMessageAttachment(
+    @Body() body: { filename?: string; contentType?: string },
+  ) {
+    const contentType = body?.contentType ?? '';
+    const isImage = contentType.startsWith('image/');
+    const isPdf = contentType === 'application/pdf';
+    if (!isImage && !isPdf) {
+      throw new BadRequestException('File must be an image or PDF');
+    }
+    const filename = body?.filename ?? `attachment-${Date.now()}`;
+    const { uploadUrl, fileUrl } = await this.b2Service.getPresignedPutUrl({
+      folder: 'message-attachments',
+      filename,
+      contentType,
+    });
+    return { uploadUrl, fileUrl, mimeType: contentType };
   }
 
   @Post('message-attachment')
