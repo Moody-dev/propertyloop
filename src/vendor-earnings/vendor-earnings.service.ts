@@ -53,67 +53,66 @@ export class VendorEarningsService {
     const startOfYear = new Date(startOfMonth);
     startOfYear.setMonth(0);
 
+    // Money counts as "earned/gotten" once it's out of escrow and belongs to the
+    // vendor: AVAILABLE (withdrawable), PROCESSING (withdrawing), or PAID (in bank).
+    // PENDING is still in escrow (not theirs yet); refunded earnings are deleted.
+    const EARNED = [
+      EarningStatus.AVAILABLE,
+      EarningStatus.PROCESSING,
+      EarningStatus.PAID,
+    ];
+
     const [
+      earnedAgg,
+      earnedMonthAgg,
+      earnedYearAgg,
       paidAgg,
       pendingAgg,
       processingAgg,
       availableAgg,
-      thisMonthAgg,
-      thisYearAgg,
       count,
     ] = await Promise.all([
-        this.prisma.vendorEarning.aggregate({
-          where: { vendorUserId, status: EarningStatus.PAID },
-          _sum: { amount: true },
-          _count: true,
-        }),
-        this.prisma.vendorEarning.aggregate({
-          where: { vendorUserId, status: EarningStatus.PENDING },
-          _sum: { amount: true },
-          _count: true,
-        }),
-        this.prisma.vendorEarning.aggregate({
-          where: { vendorUserId, status: EarningStatus.PROCESSING },
-          _sum: { amount: true },
-          _count: true,
-        }),
-        this.prisma.vendorEarning.aggregate({
-          where: { vendorUserId, status: EarningStatus.AVAILABLE },
-          _sum: { amount: true },
-          _count: true,
-        }),
-        this.prisma.vendorEarning.aggregate({
-          where: {
-            vendorUserId,
-            status: EarningStatus.PAID,
-            paidAt: { gte: startOfMonth },
-          },
-          _sum: { amount: true },
-        }),
-        this.prisma.vendorEarning.aggregate({
-          where: {
-            vendorUserId,
-            status: EarningStatus.PAID,
-            paidAt: { gte: startOfYear },
-          },
-          _sum: { amount: true },
-        }),
-        this.prisma.vendorEarning.count({ where: { vendorUserId } }),
-      ]);
-
-    const paid = paidAgg._sum.amount ?? 0;
-    const pending = pendingAgg._sum.amount ?? 0;
-    const processing = processingAgg._sum.amount ?? 0;
-    const available = availableAgg._sum.amount ?? 0;
+      // Lifetime earned — "overall money made since usage".
+      this.prisma.vendorEarning.aggregate({
+        where: { vendorUserId, status: { in: EARNED } },
+        _sum: { amount: true },
+      }),
+      // Earned this month — by when the earning was recorded, not when withdrawn.
+      this.prisma.vendorEarning.aggregate({
+        where: { vendorUserId, status: { in: EARNED }, createdAt: { gte: startOfMonth } },
+        _sum: { amount: true },
+      }),
+      this.prisma.vendorEarning.aggregate({
+        where: { vendorUserId, status: { in: EARNED }, createdAt: { gte: startOfYear } },
+        _sum: { amount: true },
+      }),
+      this.prisma.vendorEarning.aggregate({
+        where: { vendorUserId, status: EarningStatus.PAID },
+        _sum: { amount: true },
+      }),
+      this.prisma.vendorEarning.aggregate({
+        where: { vendorUserId, status: EarningStatus.PENDING },
+        _sum: { amount: true },
+      }),
+      this.prisma.vendorEarning.aggregate({
+        where: { vendorUserId, status: EarningStatus.PROCESSING },
+        _sum: { amount: true },
+      }),
+      this.prisma.vendorEarning.aggregate({
+        where: { vendorUserId, status: EarningStatus.AVAILABLE },
+        _sum: { amount: true },
+      }),
+      this.prisma.vendorEarning.count({ where: { vendorUserId } }),
+    ]);
 
     return {
-      total: paid + pending + processing + available,
-      paid,
-      pending,
-      processing,
-      available,
-      thisMonth: thisMonthAgg._sum.amount ?? 0,
-      thisYear: thisYearAgg._sum.amount ?? 0,
+      total: earnedAgg._sum.amount ?? 0,
+      paid: paidAgg._sum.amount ?? 0,
+      pending: pendingAgg._sum.amount ?? 0,
+      processing: processingAgg._sum.amount ?? 0,
+      available: availableAgg._sum.amount ?? 0,
+      thisMonth: earnedMonthAgg._sum.amount ?? 0,
+      thisYear: earnedYearAgg._sum.amount ?? 0,
       count,
     };
   }

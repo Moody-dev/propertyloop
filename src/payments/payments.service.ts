@@ -219,6 +219,7 @@ export class PaymentsService {
 
     let withdrawn = 0;
     let failures = 0;
+    let lastError: string | undefined;
     for (const earning of available) {
       try {
         const transferReference = `PLWD-${earning.jobId}-${Date.now()}`;
@@ -244,16 +245,22 @@ export class PaymentsService {
         withdrawn += earning.amount;
       } catch (error: any) {
         failures += 1;
+        lastError = error.response?.data?.message || error.message;
         console.error(
           `Withdrawal transfer failed for earning ${earning.id}:`,
-          error.response?.data?.message || error.message,
+          lastError,
         );
       }
     }
 
     if (withdrawn === 0) {
+      // Surface the real Paystack reason (e.g. transfers not enabled, insufficient
+      // balance, invalid recipient) instead of a blank "try again" — it's almost
+      // always an account/config issue the operator needs to see and act on.
       throw new BadRequestException(
-        'Could not start your withdrawal. Please try again shortly.',
+        lastError
+          ? `Withdrawal couldn't start: ${lastError}`
+          : 'Could not start your withdrawal. Please try again shortly.',
       );
     }
 
