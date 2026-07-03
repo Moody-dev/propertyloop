@@ -50,6 +50,19 @@ export class PaystackService {
     return { status, amount, reference: ref, metadata };
   }
 
+  /**
+   * Verify a transaction and return Paystack's full payload (paid_at,
+   * subscription_code, customer, plan, …) — the same shape charge.success
+   * webhooks deliver. Used by verify-on-return flows that need to run a
+   * webhook handler manually (e.g. agent subscription activation).
+   */
+  async verifyTransactionRaw(reference: string): Promise<Record<string, any>> {
+    const response = await this.axiosInstance.get(
+      `/transaction/verify/${reference}`,
+    );
+    return response.data.data;
+  }
+
   async initiateTransfer(payload: {
     source: 'balance';
     amount: number; // kobo

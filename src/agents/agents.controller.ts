@@ -80,11 +80,12 @@ export class AgentsController {
   @Post('me/subscription/checkout')
   initCheckout(
     @CurrentUser() user: CurrentUserData,
-    @Body() body: { tier: 'STANDARD' | 'PRO' },
+    @Body() body: { tier: 'STANDARD' | 'PRO'; returnUrl?: string },
   ) {
     return this.agentsService.initializeSubscriptionCheckout(
       user.id,
       body.tier,
+      body.returnUrl,
     );
   }
 

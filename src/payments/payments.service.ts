@@ -667,6 +667,42 @@ export class PaymentsService {
     }
   }
 
+  /**
+   * Verify-on-return for the mobile app: actively confirm a subscription
+   * charge with Paystack and activate the plan without waiting on the
+   * webhook. Idempotent — handleSubscriptionChargeSuccess skips references
+   * that were already processed. Returns the caller's fresh subscription
+   * state so the app can show "plan active" immediately.
+   */
+  async verifySubscriptionPayment(userId: string, reference: string) {
+    const data = await this.paystackService.verifyTransactionRaw(reference);
+    const meta = (data?.metadata ?? {}) as Record<string, any>;
+    if (meta?.type !== 'agent_subscription' || meta?.userId !== userId) {
+      throw new BadRequestException(
+        'Reference is not a subscription payment for this account',
+      );
+    }
+
+    if (data.status === 'success') {
+      await this.handleSubscriptionChargeSuccess(data);
+    }
+
+    const profile = await this.prisma.agentProfile.findUnique({
+      where: { userId },
+      select: {
+        subscriptionTier: true,
+        subscriptionStatus: true,
+        subscriptionRenewsAt: true,
+      },
+    });
+    return {
+      paymentStatus: data.status as 'success' | 'failed' | 'pending',
+      tier: profile?.subscriptionTier ?? null,
+      status: profile?.subscriptionStatus ?? null,
+      renewsAt: profile?.subscriptionRenewsAt ?? null,
+    };
+  }
+
   /** Fires on recurring monthly renewal */
   async handleSubscriptionRenewal(data: any): Promise<void> {
     const subCode =

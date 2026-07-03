@@ -44,6 +44,17 @@ export class PaymentsController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @Get('subscription/verify/:reference')
+  verifySubscription(
+    @CurrentUser() user: CurrentUserData,
+    @Param('reference') reference: string,
+  ) {
+    // Verify-on-return for the mobile agent subscription checkout — activates
+    // the plan immediately instead of waiting on the charge.success webhook.
+    return this.paymentsService.verifySubscriptionPayment(user.id, reference);
+  }
+
+  @UseGuards(JwtAuthGuard)
   @Get('verify/:reference')
   async verifyPayment(@Param('reference') reference: string) {
     // Actively verify with Paystack and lock escrow if the charge succeeded,

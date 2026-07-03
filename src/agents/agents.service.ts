@@ -422,6 +422,7 @@ export class AgentsService {
   async initializeSubscriptionCheckout(
     userId: string,
     tier: 'STANDARD' | 'PRO',
+    returnUrl?: string,
   ): Promise<{ paymentUrl: string; reference: string }> {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
@@ -442,10 +443,13 @@ export class AgentsService {
 
     const amountKobo = tier === 'PRO' ? 2_000_000 : 500_000; // ₦20,000 (Premium) / ₦5,000 (Standard)
     const reference = `PLSUB-${user.agentProfile.id}-${tier}-${Date.now()}`;
+    // The mobile app passes its own deep link so Paystack returns the user to
+    // the app (where we verify on return); the web app falls back to the site.
     const frontendUrl =
       this.configService.get<string>('FRONTEND_URL') ||
       'https://propertyloop.ng';
-    const callbackUrl = `${frontendUrl}/agent/subscription/callback?ref=${reference}`;
+    const callbackUrl =
+      returnUrl || `${frontendUrl}/agent/subscription/callback?ref=${reference}`;
 
     const { authorization_url } =
       await this.paystackService.initializeSubscriptionTransaction({

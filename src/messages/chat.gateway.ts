@@ -73,19 +73,16 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       client.join(`user:${payload.sub}`);
 
       // Join rooms for all conversations this user participates in
-      const participants =
-        await this.prisma.conversationParticipant.findMany({
-          where: { userId: payload.sub },
-          select: { conversationId: true },
-        });
+      const participants = await this.prisma.conversationParticipant.findMany({
+        where: { userId: payload.sub },
+        select: { conversationId: true },
+      });
       for (const p of participants) {
         client.join(`convo:${p.conversationId}`);
       }
 
       // Acknowledge connection with unread count
-      const { unread } = await this.messagesService.getUnreadCount(
-        payload.sub,
-      );
+      const { unread } = await this.messagesService.getUnreadCount(payload.sub);
       client.emit('connected', { userId: payload.sub, unread });
     } catch {
       client.disconnect();
@@ -108,10 +105,16 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @SubscribeMessage('send_message')
   async handleSendMessage(
     @ConnectedSocket() client: Socket,
-    @MessageBody() body: { conversationId: string; text?: string; attachmentUrls?: string[] },
+    @MessageBody()
+    body: { conversationId: string; text?: string; attachmentUrls?: string[] },
   ) {
     const userId = client.data?.userId;
-    if (!userId || !body.conversationId || (!body.text?.trim() && !body.attachmentUrls?.length)) return;
+    if (
+      !userId ||
+      !body.conversationId ||
+      (!body.text?.trim() && !body.attachmentUrls?.length)
+    )
+      return;
 
     try {
       const message = await this.messagesService.sendMessage(
@@ -124,8 +127,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     } catch (err) {
       client.emit('error', {
         event: 'send_message',
-        message:
-          err instanceof Error ? err.message : 'Failed to send message',
+        message: err instanceof Error ? err.message : 'Failed to send message',
       });
     }
   }
@@ -140,15 +142,14 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     if (!userId || !body.conversationId) return;
 
     // Verify participant
-    const participant =
-      await this.prisma.conversationParticipant.findUnique({
-        where: {
-          conversationId_userId: {
-            conversationId: body.conversationId,
-            userId,
-          },
+    const participant = await this.prisma.conversationParticipant.findUnique({
+      where: {
+        conversationId_userId: {
+          conversationId: body.conversationId,
+          userId,
         },
-      });
+      },
+    });
     if (!participant) return;
 
     client.join(`convo:${body.conversationId}`);
@@ -283,7 +284,9 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   /** Check if a user is currently online */
   isUserOnline(userId: string): boolean {
-    return this.userSockets.has(userId) && this.userSockets.get(userId)!.size > 0;
+    return (
+      this.userSockets.has(userId) && this.userSockets.get(userId)!.size > 0
+    );
   }
 
   private extractToken(client: Socket): string | null {
