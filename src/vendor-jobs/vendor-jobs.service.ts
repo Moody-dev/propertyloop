@@ -483,7 +483,10 @@ export class VendorJobsService {
       },
     });
 
-    // Keep both sides looped in when PropertyLoop weighs in.
+    // Keep both sides looped in when PropertyLoop weighs in — put the actual
+    // message in the notification so it's visible without opening the thread.
+    const snippet =
+      dto.body.length > 160 ? `${dto.body.slice(0, 157)}…` : dto.body;
     const recipients = [job.vendorUserId, job.buyerUserId].filter(
       (id): id is string => !!id,
     );
@@ -492,7 +495,7 @@ export class VendorJobsService {
         userId,
         type: NotificationType.JOB_DISPUTED,
         title: 'PropertyLoop replied to your dispute',
-        body: `Our team responded on ${job.title}. Open the dispute to read it.`,
+        body: snippet,
         data: { jobId },
       });
     }
@@ -537,6 +540,12 @@ export class VendorJobsService {
       },
     });
 
+    // Append the admin's note (if any) so their message reaches both parties in
+    // the notification itself, not just the dispute thread.
+    const trimmedNote = note?.trim();
+    const withNote = (base: string) =>
+      trimmedNote ? `${base}\n\n“${trimmedNote}”` : base;
+
     // Tell the vendor what happened to their money…
     void this.notifications.notify({
       userId: job.vendorUserId,
@@ -548,10 +557,11 @@ export class VendorJobsService {
         outcome === 'release'
           ? 'Dispute resolved — payment released'
           : 'Dispute resolved — payment refunded',
-      body:
+      body: withNote(
         outcome === 'release'
           ? `${job.title}: ${nairaLabel(job.vendorFee)} is now in your balance.`
           : `${job.title}: the payment was refunded to the customer.`,
+      ),
       data: { jobId },
     });
     // …and let the customer know too.
@@ -560,10 +570,11 @@ export class VendorJobsService {
         userId: job.buyerUserId,
         type: NotificationType.JOB_DISPUTED,
         title: 'Dispute resolved',
-        body:
+        body: withNote(
           outcome === 'release'
             ? `${job.title}: our team released the payment to the vendor.`
             : `${job.title}: ${nairaLabel(job.escrowAmount)} has been refunded to you.`,
+        ),
         data: { jobId },
       });
     }
