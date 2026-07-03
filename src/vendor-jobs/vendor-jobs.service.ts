@@ -206,6 +206,13 @@ export class VendorJobsService {
     if (job.status !== JobStatus.ACCEPTED) {
       throw new BadRequestException('Only accepted jobs can be started');
     }
+    // Don't let a vendor begin work until the customer's payment is actually
+    // secured in escrow — otherwise they could work with no funds guaranteed.
+    if (job.escrowStatus !== EscrowStatus.LOCKED) {
+      throw new BadRequestException(
+        "You can't start this job until the customer's payment is secured in escrow.",
+      );
+    }
     return this.prisma.vendorJob.update({
       where: { id: jobId },
       data: { status: JobStatus.IN_PROGRESS },
