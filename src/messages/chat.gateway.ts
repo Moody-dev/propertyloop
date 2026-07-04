@@ -77,8 +77,16 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         where: { userId: payload.sub },
         select: { conversationId: true },
       });
+      const wasOffline = this.userSockets.get(payload.sub)!.size === 1;
       for (const p of participants) {
         client.join(`convo:${p.conversationId}`);
+        // First socket for this user → tell their chat partners they're online.
+        if (wasOffline) {
+          client.to(`convo:${p.conversationId}`).emit('presence', {
+            userId: payload.sub,
+            online: true,
+          });
+        }
       }
 
       // Acknowledge connection with unread count
@@ -89,12 +97,27 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
   }
 
-  handleDisconnect(client: Socket) {
+  async handleDisconnect(client: Socket) {
     const userId = client.data?.userId;
     if (userId && this.userSockets.has(userId)) {
       this.userSockets.get(userId)!.delete(client.id);
       if (this.userSockets.get(userId)!.size === 0) {
         this.userSockets.delete(userId);
+        // Last socket gone → broadcast offline to everyone sharing a chat.
+        try {
+          const participants =
+            await this.prisma.conversationParticipant.findMany({
+              where: { userId },
+              select: { conversationId: true },
+            });
+          for (const p of participants) {
+            this.server
+              .to(`convo:${p.conversationId}`)
+              .emit('presence', { userId, online: false });
+          }
+        } catch {
+          /* best-effort presence */
+        }
       }
     }
   }
@@ -154,7 +177,20 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
     client.join(`convo:${body.conversationId}`);
 
-    // Mark as read
+    // Tell the opener whether the other participants are online right now,
+    // so the header can show Online/Offline immediately.
+    const others = await this.prisma.conversationParticipant.findMany({
+      where: { conversationId: body.conversationId, userId: { not: userId } },
+      select: { userId: true },
+    });
+    for (const o of others) {
+      client.emit('presence', {
+        userId: o.userId,
+        online: this.isUserOnline(o.userId),
+      });
+    }
+
+    // Mark as read (service broadcasts messages_read to the room)
     await this.messagesService.markRead(userId, body.conversationId);
     client.emit('conversation_read', {
       conversationId: body.conversationId,
@@ -194,6 +230,19 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   // ─── Public broadcast API (called from MessagesService) ───────────────
+
+  /**
+   * A participant read the conversation — tell everyone else in the room so
+   * open chat screens can flip sent ticks (✓) to read ticks (✓✓) instantly.
+   */
+  broadcastMessagesRead(conversationId: string, readerUserId: string, readAt: Date) {
+    if (!this.server) return;
+    this.server.to(`convo:${conversationId}`).emit('messages_read', {
+      conversationId,
+      readerUserId,
+      readAt: readAt.toISOString(),
+    });
+  }
 
   /**
    * Emit `new_message` to every participant of the conversation via their

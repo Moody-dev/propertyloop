@@ -397,6 +397,26 @@ export class VendorJobsService {
       },
     });
 
+    // Tell the other party there's a new reply on the dispute — otherwise a
+    // vendor's evidence (or the customer's follow-up) lands silently.
+    const otherPartyId =
+      role === DisputeAuthorRole.VENDOR ? job.buyerUserId : job.vendorUserId;
+    if (otherPartyId) {
+      const from =
+        role === DisputeAuthorRole.VENDOR
+          ? 'the vendor'
+          : (job.clientName ?? 'the customer');
+      const snippet =
+        dto.body.length > 140 ? `${dto.body.slice(0, 137)}…` : dto.body;
+      void this.notifications.notify({
+        userId: otherPartyId,
+        type: NotificationType.JOB_DISPUTED,
+        title: `New reply on your dispute`,
+        body: `${job.title}: ${from} replied — “${snippet}”`,
+        data: { jobId },
+      });
+    }
+
     return this.getDispute(jobId, userId);
   }
 
@@ -466,7 +486,8 @@ export class VendorJobsService {
     if (!job.disputedAt) {
       throw new BadRequestException('This job has no dispute');
     }
-    return this.serializeDispute(job);
+    // Admins see which staff member wrote each reply; parties never do.
+    return this.serializeDispute(job, false);
   }
 
   async adminAddDisputeMessage(
@@ -654,7 +675,7 @@ export class VendorJobsService {
     };
   }
 
-  private serializeDispute(job: any) {
+  private serializeDispute(job: any, maskAdmin = true) {
     const deadline = job.disputedAt
       ? new Date(job.disputedAt.getTime() + DISPUTE_RESPONSE_WINDOW_MS)
       : null;
@@ -680,7 +701,7 @@ export class VendorJobsService {
         ? { id: job.vendor.id, name: job.vendor.name, avatar: job.vendor.avatarUrl }
         : null,
       thread: (job.disputeMessages ?? []).map((m: any) =>
-        this.serializeDisputeMessage(m, job),
+        this.serializeDisputeMessage(m, job, maskAdmin),
       ),
     };
   }
@@ -711,14 +732,15 @@ export class VendorJobsService {
     };
   }
 
-  private serializeDisputeMessage(m: any, job: any) {
+  private serializeDisputeMessage(m: any, job: any, maskAdmin = true) {
     let author: string;
     if (m.role === DisputeAuthorRole.CUSTOMER) {
       author = job.clientName ?? 'Customer';
+    } else if (m.role === DisputeAuthorRole.ADMIN) {
+      // Parties see the platform, never the individual staff member's name.
+      author = maskAdmin ? 'PropertyLoop' : (m.sender?.name ?? 'PropertyLoop');
     } else if (m.role === DisputeAuthorRole.VENDOR) {
       author = job.vendor?.name ?? 'Vendor';
-    } else if (m.role === DisputeAuthorRole.ADMIN) {
-      author = m.sender?.name ?? 'PropertyLoop';
     } else {
       author = 'System';
     }

@@ -718,6 +718,10 @@ model ConversationParticipant {
   user           User                        @relation(fields: [userId], references: [id], onDelete: Cascade)
   role           ConversationParticipantRole
   unreadCount    Int                         @default(0)
+  // When this participant last opened/read the conversation. Drives read
+  // receipts: a message counts as "read" once every other participant's
+  // lastReadAt is past its createdAt.
+  lastReadAt     DateTime?
 
   @@unique([conversationId, userId])
   @@index([userId])

@@ -141,11 +141,25 @@ export class MessagesService {
       },
     });
 
-    // Mark as read
+    // Mark as read (and let the other side flip ✓ → ✓✓ live).
+    const readAt = new Date();
     await this.prisma.conversationParticipant.updateMany({
       where: { conversationId, userId },
-      data: { unreadCount: 0 },
+      data: { unreadCount: 0, lastReadAt: readAt },
     });
+    this.chatGateway.broadcastMessagesRead(conversationId, userId, readAt);
+
+    // The other side's lastReadAt drives read receipts on the viewer's own
+    // messages: read once their read marker is past the message's createdAt.
+    const others = await this.prisma.conversationParticipant.findMany({
+      where: { conversationId, userId: { not: userId } },
+      select: { lastReadAt: true },
+    });
+    const otherReadAt = others.reduce<Date | null>(
+      (max, p) =>
+        p.lastReadAt && (!max || p.lastReadAt > max) ? p.lastReadAt : max,
+      null,
+    );
 
     // Resolve the viewer's role so we know whether to mask admin senders.
     // Admins themselves should see real names; everyone else sees PropertyLoop.
@@ -158,16 +172,19 @@ export class MessagesService {
     return messages.reverse().map((m) => {
       const senderIsAdmin = m.sender.role === 'ADMIN';
       const mask = senderIsAdmin && !viewerIsAdmin;
+      const isYou = m.senderUserId === userId;
       return {
         id: m.id,
         conversationId: m.conversationId,
         senderUserId: m.senderUserId,
         senderName: mask ? PROPERTYLOOP_NAME : m.sender.name,
         senderAvatar: mask ? PROPERTYLOOP_AVATAR : m.sender.avatarUrl,
-        isYou: m.senderUserId === userId,
+        isYou,
         text: m.text,
         attachmentUrls: m.attachmentUrls,
         createdAt: m.createdAt.toISOString(),
+        // Only meaningful on your own messages; others' are read by definition.
+        read: isYou ? !!otherReadAt && m.createdAt <= otherReadAt : true,
       };
     });
   }
@@ -216,6 +233,7 @@ export class MessagesService {
       text: message.text,
       attachmentUrls: message.attachmentUrls,
       createdAt: message.createdAt.toISOString(),
+      read: false,
     };
 
     await this.chatGateway.broadcastNewMessage(conversationId, payload, {
@@ -361,11 +379,14 @@ export class MessagesService {
 
   async markRead(userId: string, conversationId: string) {
     await this.assertParticipant(userId, conversationId);
+    const readAt = new Date();
     await this.prisma.conversationParticipant.updateMany({
       where: { conversationId, userId },
-      data: { unreadCount: 0 },
+      data: { unreadCount: 0, lastReadAt: readAt },
     });
-    return { success: true };
+    // Let the other side flip their ✓ to ✓✓ live.
+    this.chatGateway.broadcastMessagesRead(conversationId, userId, readAt);
+    return { success: true, readAt: readAt.toISOString() };
   }
 
   // ─── Get total unread count ──────────────────────────────────────────────
