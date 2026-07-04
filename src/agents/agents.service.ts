@@ -443,13 +443,15 @@ export class AgentsService {
 
     const amountKobo = tier === 'PRO' ? 2_000_000 : 500_000; // ₦20,000 (Premium) / ₦5,000 (Standard)
     const reference = `PLSUB-${user.agentProfile.id}-${tier}-${Date.now()}`;
-    // The mobile app passes its own deep link so Paystack returns the user to
-    // the app (where we verify on return); the web app falls back to the site.
+    // The mobile app passes its own deep link. Paystack won't redirect to a
+    // custom app scheme, so wrap it in our https bounce page; the web app falls
+    // back to the site callback.
     const frontendUrl =
       this.configService.get<string>('FRONTEND_URL') ||
       'https://propertyloop.ng';
-    const callbackUrl =
-      returnUrl || `${frontendUrl}/agent/subscription/callback?ref=${reference}`;
+    const callbackUrl = returnUrl
+      ? this.paystackService.buildMobileReturnUrl(returnUrl)
+      : `${frontendUrl}/agent/subscription/callback?ref=${reference}`;
 
     const { authorization_url } =
       await this.paystackService.initializeSubscriptionTransaction({

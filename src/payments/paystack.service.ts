@@ -19,6 +19,28 @@ export class PaystackService {
     });
   }
 
+  /**
+   * Wrap a mobile app deep link (e.g. propertyloopmobile://payment-callback)
+   * in an HTTPS "bounce" URL on our own backend.
+   *
+   * Paystack only redirects its checkout success page to http(s) callback URLs
+   * — handed a custom app scheme it just leaves the user staring at the
+   * success screen. So we point Paystack at GET /api/payments/mobile-return,
+   * which serves a tiny page that immediately forwards to the app scheme; the
+   * in-app browser (openAuthSessionAsync) then intercepts that and returns to
+   * the app. Falls back to the raw deep link if the backend origin is unknown.
+   */
+  buildMobileReturnUrl(appDeepLink: string): string {
+    const origin = (this.configService.get<string>('PUBLIC_API_URL') ?? '')
+      .trim()
+      .replace(/\/+$/, '')
+      .replace(/\/api$/, '');
+    if (!origin) return appDeepLink;
+    return `${origin}/api/payments/mobile-return?to=${encodeURIComponent(
+      appDeepLink,
+    )}`;
+  }
+
   async initializeTransaction(payload: {
     email: string;
     amount: number; // kobo

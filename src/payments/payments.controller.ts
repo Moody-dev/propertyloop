@@ -5,6 +5,7 @@ import {
   Param,
   Body,
   Headers,
+  Header,
   HttpCode,
   Query,
   UseGuards,
@@ -62,6 +63,57 @@ export class PaymentsController {
     await this.paymentsService.handleChargeSuccess(reference);
     const job = await this.paymentsService.getJobByEscrowId(reference);
     return { escrowStatus: job?.escrowStatus || 'NONE', jobId: job?.id };
+  }
+
+  /**
+   * Public HTML bounce for mobile Paystack returns. Paystack redirects its
+   * checkout success page here (an https URL it will actually follow), and this
+   * page immediately forwards to the app's deep link so the in-app browser
+   * closes and the app resumes to verify the charge. Only app schemes are
+   * allowed as the target, so this can't be abused as an open redirect.
+   */
+  @SkipThrottle()
+  @Get('mobile-return')
+  @Header('Content-Type', 'text/html')
+  mobileReturn(@Query('to') to?: string): string {
+    const target = to ?? '';
+    const allowed = /^(propertyloopmobile:\/\/|exp(\+[\w-]+)?:\/\/)/i.test(
+      target,
+    );
+    const safeTarget = allowed ? target : '';
+    // JSON.stringify safely embeds the URL as a JS string literal.
+    const jsTarget = JSON.stringify(safeTarget);
+    return `<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Payment complete</title>
+<style>
+  body { margin:0; font-family:-apple-system,Roboto,"Segoe UI",sans-serif; background:#fffbf4; color:#1a2120;
+         display:flex; min-height:100vh; align-items:center; justify-content:center; text-align:center; }
+  .card { padding:28px; }
+  .tick { width:64px; height:64px; border-radius:50%; background:#e3efe7; color:#1f6f43;
+          display:flex; align-items:center; justify-content:center; font-size:34px; margin:0 auto 16px; }
+  h1 { font-size:19px; margin:0 0 6px; }
+  p { font-size:14px; color:#4d524f; margin:0 0 20px; }
+  a { display:inline-block; background:#1f6f43; color:#fff; text-decoration:none;
+      padding:13px 22px; border-radius:100px; font-weight:700; font-size:14px; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="tick">&#10003;</div>
+    <h1>Payment received</h1>
+    <p>Returning you to PropertyLoop&hellip;</p>
+    <a id="back" href="${safeTarget}">Return to app</a>
+  </div>
+  <script>
+    var target = ${jsTarget};
+    if (target) { setTimeout(function(){ window.location.replace(target); }, 350); }
+  </script>
+</body>
+</html>`;
   }
 
   @SkipThrottle()

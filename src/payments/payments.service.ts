@@ -47,9 +47,11 @@ export class PaymentsService {
     // callers fall back to the web payment-callback page.
     const frontendUrl =
       this.configService.get<string>('FRONTEND_URL') || 'http://localhost:5173';
+    // Paystack won't redirect to a custom app scheme, so wrap the mobile deep
+    // link in our https bounce page; web/no-URL callers use the site callback.
     const callbackUrl =
       returnUrl && returnUrl.trim()
-        ? returnUrl
+        ? this.paystackService.buildMobileReturnUrl(returnUrl)
         : `${frontendUrl}/payment-callback?jobId=${jobId}`;
 
     try {
