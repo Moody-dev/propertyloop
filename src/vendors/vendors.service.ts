@@ -259,11 +259,23 @@ export class VendorsService {
         where: { vendorUserId: userId, status: EarningStatus.AVAILABLE },
         _sum: { amount: true },
       }),
+      // "Earned this month" — must match vendor-earnings.service.ts's
+      // definition (status AVAILABLE/PROCESSING/PAID, by createdAt) so the
+      // dashboard tile and the Earnings screen never show different numbers
+      // for the same label. Previously this only counted PAID-and-transferred
+      // money by paidAt, which stayed ₦0 until a bank payout actually cleared
+      // — even for a vendor who'd clearly earned money this month.
       this.prisma.vendorEarning.aggregate({
         where: {
           vendorUserId: userId,
-          status: EarningStatus.PAID,
-          paidAt: { gte: startOfMonth },
+          status: {
+            in: [
+              EarningStatus.AVAILABLE,
+              EarningStatus.PROCESSING,
+              EarningStatus.PAID,
+            ],
+          },
+          createdAt: { gte: startOfMonth },
         },
         _sum: { amount: true },
       }),
