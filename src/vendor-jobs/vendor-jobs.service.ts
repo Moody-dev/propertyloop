@@ -184,10 +184,25 @@ export class VendorJobsService {
     if (job.status !== JobStatus.PENDING) {
       throw new BadRequestException('Only pending jobs can be accepted');
     }
-    return this.prisma.vendorJob.update({
+    const updated = await this.prisma.vendorJob.update({
       where: { id: jobId },
       data: { status: JobStatus.ACCEPTED },
     });
+
+    // The whole escrow flow stalls here unless the customer knows it's their
+    // move: the vendor can't start until the money is locked, so tell the
+    // customer to fund escrow now.
+    if (job.buyerUserId) {
+      void this.notifications.notify({
+        userId: job.buyerUserId,
+        type: NotificationType.JOB_ACCEPTED,
+        title: 'Request accepted — secure your payment',
+        body: `${job.title} was accepted. Pay ${nairaLabel(job.escrowAmount)} into escrow so the vendor can start.`,
+        data: { jobId },
+      });
+    }
+
+    return this.serialize(updated);
   }
 
   async decline(vendorUserId: string, jobId: string) {
@@ -198,6 +213,19 @@ export class VendorJobsService {
     // Deleting the job is the cleanest way to model a decline without adding
     // a new enum value. Escrow hasn't been released so no money accounting needed.
     await this.prisma.vendorJob.delete({ where: { id: jobId } });
+
+    // Don't let the request vanish silently — tell the customer so they can
+    // book someone else.
+    if (job.buyerUserId) {
+      void this.notifications.notify({
+        userId: job.buyerUserId,
+        type: NotificationType.JOB_DECLINED,
+        title: 'Request declined',
+        body: `The vendor couldn't take "${job.title}". You haven't been charged — try another vendor.`,
+        data: {},
+      });
+    }
+
     return { success: true };
   }
 

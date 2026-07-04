@@ -6,6 +6,8 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { PaystackService } from './paystack.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import { NotificationType } from '../notifications/notification-types';
 import {
   EarningStatus,
   EscrowStatus,
@@ -22,6 +24,7 @@ export class PaymentsService {
     private prisma: PrismaService,
     private paystackService: PaystackService,
     private configService: ConfigService,
+    private notifications: NotificationsService,
   ) {}
 
   async initializeJobPayment(
@@ -304,6 +307,15 @@ export class PaymentsService {
         },
       });
 
+      // Close the loop for the vendor — the money actually reached their bank.
+      void this.notifications.notify({
+        userId: job.vendorUserId,
+        type: NotificationType.JOB_CONFIRMED,
+        title: 'Withdrawal sent to your bank',
+        body: `₦${Math.round(job.vendorFee).toLocaleString('en-NG')} for "${job.title}" has been paid out to your bank account.`,
+        data: { jobId: job.id },
+      });
+
       console.log(`Vendor earning recorded for job ${job.id}`);
     } catch (error: any) {
       console.error(
@@ -325,6 +337,14 @@ export class PaymentsService {
     await this.prisma.vendorEarning.updateMany({
       where: { jobId: job.id, status: EarningStatus.PROCESSING },
       data: { status: EarningStatus.AVAILABLE },
+    });
+    // Tell the vendor rather than silently re-crediting their balance.
+    void this.notifications.notify({
+      userId: job.vendorUserId,
+      type: NotificationType.JOB_CONFIRMED,
+      title: "Withdrawal didn't go through",
+      body: `The bank transfer for "${job.title}" failed. The money is back in your balance — check your payout account and try again.`,
+      data: { jobId: job.id },
     });
     console.warn(`Transfer failed for job ${job.id} → earning back to AVAILABLE`);
   }
