@@ -63,9 +63,14 @@ export class VendorJobsService {
       throw new BadRequestException('This vendor is not accepting new bookings');
     }
 
-    const vendorFee = Math.max(0, Math.floor(dto.vendorFee));
-    const platformFee = Math.round(vendorFee * 0.1);
-    const escrowAmount = vendorFee + platformFee;
+    // The buyer pays the vendor's listed price with no markup. PropertyLoop's
+    // 20% commission is deducted FROM the vendor's cut, so the vendor nets 80%
+    // and the buyer never pays extra. Invariant kept: escrowAmount = vendorFee
+    // + platformFee (e.g. ₦200 = ₦160 + ₦40).
+    const price = Math.max(0, Math.floor(dto.vendorFee));
+    const platformFee = Math.round(price * 0.2);
+    const vendorFee = price - platformFee;
+    const escrowAmount = price;
 
     const job = await this.prisma.vendorJob.create({
       data: {

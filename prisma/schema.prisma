@@ -820,9 +820,9 @@ model VendorJob {
   // Escrow (placeholder until Paystack wiring)
   escrowId      String?      @unique
   escrowStatus  EscrowStatus @default(NONE)
-  escrowAmount  Int          @default(0) // vendorFee + platformFee
-  vendorFee     Int          @default(0)
-  platformFee   Int          @default(0) // 10% PropertyLoop takes
+  escrowAmount  Int          @default(0) // what the buyer pays = the vendor's listed price (no markup)
+  vendorFee     Int          @default(0) // vendor's net take = 80% of the price
+  platformFee   Int          @default(0) // 20% PropertyLoop commission, deducted from the vendor's cut
   paymentMethod String?
 
   // Completion & dispute
