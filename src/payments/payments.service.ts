@@ -305,13 +305,25 @@ export class PaymentsService {
     }
 
     if (withdrawn === 0) {
-      // Surface the real Paystack reason (e.g. transfers not enabled, insufficient
-      // balance, invalid recipient) instead of a blank "try again" — it's almost
-      // always an account/config issue the operator needs to see and act on.
+      // Always log the raw Paystack reason for the operator — it's almost always
+      // a platform-account/float issue (settlement swept the balance, transfers
+      // not enabled, invalid recipient) that the vendor can't act on.
+      console.error(
+        `Withdrawal blocked for vendor ${vendorUserId}: ${lastError ?? 'unknown'}`,
+      );
+      // "Balance not enough" means OUR Paystack float is empty (collected escrow
+      // has settled to the company bank, not the transferable balance) — not the
+      // vendor's fault. Show them something reassuring instead of an alarming
+      // "your balance is not enough", which reads like they have no money.
+      const isPlatformFloatEmpty =
+        typeof lastError === 'string' &&
+        /balance is not enough|insufficient|not enough/i.test(lastError);
       throw new BadRequestException(
-        lastError
-          ? `Withdrawal couldn't start: ${lastError}`
-          : 'Could not start your withdrawal. Please try again shortly.',
+        isPlatformFloatEmpty
+          ? "Your payout is being processed and your money is safe — payouts settle within 24 hours. Please try again shortly."
+          : lastError
+            ? `Withdrawal couldn't start: ${lastError}`
+            : 'Could not start your withdrawal. Please try again shortly.',
       );
     }
 
