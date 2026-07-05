@@ -6,6 +6,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import {
   EarningStatus,
+  EscrowStatus,
   JobStatus,
   Prisma,
   Role,
@@ -241,6 +242,9 @@ export class VendorsService {
         where: {
           vendorUserId: userId,
           status: { in: [JobStatus.COMPLETED, JobStatus.PAID] },
+          // A refunded job is no longer a delivered job — keeps this count in
+          // step with profile.jobsCount, which is decremented on refund.
+          escrowStatus: { not: EscrowStatus.REFUNDED },
         },
       }),
       this.prisma.vendorJob.count({ where: { vendorUserId: userId } }),
