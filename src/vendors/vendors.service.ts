@@ -223,6 +223,7 @@ export class VendorsService {
       earningsPendingAgg,
       earningsAvailableAgg,
       earningsThisMonthAgg,
+      earningsEarnedAgg,
       reviewsCount,
       reviewsAvg,
       fiveStarCount,
@@ -279,6 +280,22 @@ export class VendorsService {
         },
         _sum: { amount: true },
       }),
+      // Lifetime earned — same definition as the Earnings screen's "Total"
+      // (money that left escrow and belongs to the vendor), so the web
+      // dashboard and the app never show different totals.
+      this.prisma.vendorEarning.aggregate({
+        where: {
+          vendorUserId: userId,
+          status: {
+            in: [
+              EarningStatus.AVAILABLE,
+              EarningStatus.PROCESSING,
+              EarningStatus.PAID,
+            ],
+          },
+        },
+        _sum: { amount: true },
+      }),
       this.prisma.vendorReview.count({ where: { vendorUserId: userId } }),
       this.prisma.vendorReview.aggregate({
         where: { vendorUserId: userId },
@@ -293,6 +310,7 @@ export class VendorsService {
     const pending = earningsPendingAgg._sum.amount ?? 0;
     const available = earningsAvailableAgg._sum.amount ?? 0;
     const thisMonth = earningsThisMonthAgg._sum.amount ?? 0;
+    const earnedTotal = earningsEarnedAgg._sum.amount ?? 0;
 
     return {
       profile: {
@@ -308,7 +326,7 @@ export class VendorsService {
         total: totalJobs,
       },
       earnings: {
-        total: paid + pending + available,
+        total: earnedTotal,
         paid,
         pending,
         available,

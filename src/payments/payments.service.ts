@@ -83,9 +83,38 @@ export class PaymentsService {
 
   async handleChargeSuccess(reference: string): Promise<void> {
     // Idempotent — find job and only update if escrowStatus === NONE
-    const job = await this.prisma.vendorJob.findUnique({
+    let job = await this.prisma.vendorJob.findUnique({
       where: { escrowId: reference },
     });
+
+    if (!job) {
+      // Recovery: the buyer may have re-initiated checkout (which overwrote
+      // escrowId with a newer reference) and then paid the OLDER checkout tab.
+      // The transaction metadata carries the jobId — recover through it and
+      // adopt the reference that was actually charged, so refunds target the
+      // right transaction.
+      try {
+        const txn = await this.paystackService.verifyTransactionRaw(reference);
+        const metaJobId = txn?.metadata?.jobId;
+        if (
+          txn?.status === 'success' &&
+          metaJobId &&
+          txn?.metadata?.type === 'vendor_job'
+        ) {
+          const candidate = await this.prisma.vendorJob.findUnique({
+            where: { id: metaJobId },
+          });
+          if (candidate && candidate.escrowStatus === EscrowStatus.NONE) {
+            job = await this.prisma.vendorJob.update({
+              where: { id: candidate.id },
+              data: { escrowId: reference },
+            });
+          }
+        }
+      } catch {
+        /* fall through to the warn below */
+      }
+    }
 
     if (!job) {
       console.warn(`Webhook: Job not found for reference ${reference}`);
