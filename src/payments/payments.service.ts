@@ -257,13 +257,30 @@ export class PaymentsService {
     for (const earning of available) {
       try {
         const transferReference = `PLWD-${earning.jobId}-${Date.now()}`;
-        const { transfer_code } = await this.paystackService.initiateTransfer({
-          source: 'balance',
-          amount: earning.amount * 100,
-          recipient: bankAccount.paystackRecipientCode,
-          reason: `Payout for job: ${earning.jobTitle}`,
-          reference: transferReference,
-        });
+        const { transfer_code, status } =
+          await this.paystackService.initiateTransfer({
+            source: 'balance',
+            amount: earning.amount * 100,
+            recipient: bankAccount.paystackRecipientCode,
+            reason: `Payout for job: ${earning.jobTitle}`,
+            reference: transferReference,
+          });
+
+        // Live accounts have "OTP for Transfers" on by default: Paystack returns
+        // status 'otp' and freezes the transfer until it's finalized with a code
+        // sent to the merchant — which no automated payout can supply. Treat it
+        // as a failure so the money stays AVAILABLE and the vendor isn't shown a
+        // "processing" transfer that will never land. Fix: disable OTP for
+        // transfers in the Paystack dashboard (Settings → Preferences).
+        if (status === 'otp') {
+          failures += 1;
+          lastError =
+            'Payouts are blocked: turn off "OTP for Transfers" in your Paystack dashboard (Settings → Preferences) so payouts can send automatically.';
+          console.error(
+            `Withdrawal blocked by transfer OTP for earning ${earning.id}. Disable OTP for transfers in the Paystack dashboard.`,
+          );
+          continue;
+        }
 
         await this.prisma.$transaction([
           this.prisma.vendorEarning.update({
