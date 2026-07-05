@@ -90,7 +90,11 @@ export class MessagesService {
     const items = conversations.map((c) => {
       const other = c.participants.find((p) => p.userId !== userId);
       const lastMsg = c.messages[0];
-      const otherIsAdmin = other?.role === 'ADMIN';
+      // Mask off the authoritative USER role, not the denormalised participant
+      // role — the latter can be stale/wrong (e.g. an admin added to an old
+      // conversation with a BUYER participant role), which would leak the
+      // admin's real name as the conversation title instead of "PropertyLoop".
+      const otherIsAdmin = other?.user.role === 'ADMIN';
       return {
         id: c.id,
         listingId: c.listingId,
