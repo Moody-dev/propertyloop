@@ -119,6 +119,8 @@ export class AuthService {
           buyerProfile: {
             create: {
               preferredLocations: dto.buyer?.preferredLocations,
+              lookingFor: dto.buyer?.lookingFor,
+              budgetRange: dto.buyer?.budgetRange,
             },
           },
         }),

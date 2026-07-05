@@ -16,6 +16,16 @@ export class BuyerSignupDataDto {
   @IsString()
   @IsOptional()
   preferredLocations?: string;
+
+  /** e.g. "Rent a home" | "Buy a home" | "Just browsing" — from onboarding intent */
+  @IsString()
+  @IsOptional()
+  lookingFor?: string;
+
+  /** e.g. "₦1M – ₦3M / yr" or "₦50M – ₦100M" — from the onboarding budget picker */
+  @IsString()
+  @IsOptional()
+  budgetRange?: string;
 }
 
 export class AgentSignupDataDto {
