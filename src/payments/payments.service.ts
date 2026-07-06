@@ -168,6 +168,16 @@ export class PaymentsService {
         update: {}, // already exists → leave its status as-is
       });
 
+      // Tell the vendor their money is secured so they can start — previously
+      // they only found out by chance when opening the job tracker.
+      void this.notifications.notify({
+        userId: job.vendorUserId,
+        type: NotificationType.JOB_ESCROW_FUNDED,
+        title: 'Payment secured — you can start',
+        body: `${job.clientName} funded escrow for "${job.title}". Start the job whenever you're ready.`,
+        data: { jobId: job.id },
+      });
+
       console.log(`Escrow LOCKED for job ${job.id} via reference ${reference}`);
     } catch (error: any) {
       console.error(
