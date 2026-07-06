@@ -821,8 +821,8 @@ model VendorJob {
   escrowId      String?      @unique
   escrowStatus  EscrowStatus @default(NONE)
   escrowAmount  Int          @default(0) // what the buyer pays = the vendor's listed price (no markup)
-  vendorFee     Int          @default(0) // vendor's net take = 80% of the price
-  platformFee   Int          @default(0) // 20% PropertyLoop commission, deducted from the vendor's cut
+  vendorFee     Int          @default(0) // vendor's net take = 90% of the price
+  platformFee   Int          @default(0) // 10% PropertyLoop commission, deducted from the vendor's cut
   paymentMethod String?
 
   // Completion & dispute

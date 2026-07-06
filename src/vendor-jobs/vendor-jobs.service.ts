@@ -64,11 +64,11 @@ export class VendorJobsService {
     }
 
     // The buyer pays the vendor's listed price with no markup. PropertyLoop's
-    // 20% commission is deducted FROM the vendor's cut, so the vendor nets 80%
+    // 10% commission is deducted FROM the vendor's cut, so the vendor nets 90%
     // and the buyer never pays extra. Invariant kept: escrowAmount = vendorFee
-    // + platformFee (e.g. ₦200 = ₦160 + ₦40).
+    // + platformFee (e.g. ₦200 = ₦180 + ₦20).
     const price = Math.max(0, Math.floor(dto.vendorFee));
-    const platformFee = Math.round(price * 0.2);
+    const platformFee = Math.round(price * 0.1);
     const vendorFee = price - platformFee;
     const escrowAmount = price;
 
