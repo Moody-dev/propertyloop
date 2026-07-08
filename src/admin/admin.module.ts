@@ -8,6 +8,7 @@ import { MessagesModule } from '../messages/messages.module';
 import { FeaturedPropertiesModule } from '../featured-properties/featured-properties.module';
 import { KycModule } from '../kyc/kyc.module';
 import { VendorJobsModule } from '../vendor-jobs/vendor-jobs.module';
+import { AdsModule } from '../ads/ads.module';
 
 @Module({
   imports: [
@@ -17,6 +18,7 @@ import { VendorJobsModule } from '../vendor-jobs/vendor-jobs.module';
     FeaturedPropertiesModule,
     KycModule,
     VendorJobsModule,
+    AdsModule,
   ],
   providers: [AdminService, PrismaService],
   controllers: [AdminController],

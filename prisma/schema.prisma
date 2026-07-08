@@ -297,6 +297,7 @@ model User {
   vendorAvailability         VendorAvailability?       @relation("VendorAvailability")
   vendorBlackouts            VendorBlackout[]          @relation("VendorBlackouts")
   kycSubmission              KycSubmission?            @relation("KycSubmission")
+  brandAds                   BrandAd[]                 @relation("BrandAds")
 
   // Social feed
   feedPosts     FeedPost[]     @relation("FeedPosts")
@@ -1539,4 +1540,71 @@ model UserFollow {
 
   @@unique([followerId, followingId])
   @@index([followingId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Brand advertising — external brands pay a flat fee to run a creative in a
+// placement slot for a fixed window. Self-serve: a brand signs up as a normal
+// user, creates the ad, pays via Paystack (web checkout — never in the iOS
+// app), and the ad goes live after admin review.
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum AdPlacement {
+  SPLASH // full-screen interstitial on app open
+  HOME_BANNER // banner at the top of Home
+  HOME_FEED // sponsored card inside the listings grid
+  SEARCH_INLINE // inline card in search results
+}
+
+enum AdStatus {
+  DRAFT // created, not paid yet
+  PENDING_REVIEW // paid, waiting on admin approval
+  ACTIVE // approved — serves while inside its run window
+  PAUSED // temporarily pulled by admin
+  REJECTED // failed review (payment refunded off-platform)
+  EXPIRED // run window ended
+}
+
+model BrandAd {
+  id          String  @id @default(cuid())
+  ownerUserId String
+  owner       User    @relation("BrandAds", fields: [ownerUserId], references: [id], onDelete: Cascade)
+
+  // Who the advertiser is
+  brandName    String
+  contactEmail String
+  contactPhone String?
+
+  // The creative
+  imageUrl String
+  headline String
+  body     String?
+  ctaLabel String  @default("Learn more")
+  ctaUrl   String
+
+  // Where + when it runs
+  placement AdPlacement
+  status    AdStatus    @default(DRAFT)
+  priority  Int         @default(0) // rotation weight when a slot has several ads
+  startAt   DateTime
+  endAt     DateTime
+  weeks     Int         @default(1)
+
+  // The money (flat fee, computed server-side from placement × weeks)
+  amountNaira Int
+  paymentRef  String?   @unique
+  paidAt      DateTime?
+
+  // Reporting back to the brand
+  impressions Int @default(0)
+  clicks      Int @default(0)
+
+  adminNote String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([placement, status])
+  @@index([ownerUserId])
+  @@index([status])
 }

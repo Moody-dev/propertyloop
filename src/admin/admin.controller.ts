@@ -41,6 +41,7 @@ import { KycStatus } from '../../generated/prisma/client';
 import { VendorJobsService } from '../vendor-jobs/vendor-jobs.service';
 import { AddDisputeMessageDto } from '../vendor-jobs/dto/add-dispute-message.dto';
 import { ResolveDisputeDto } from '../vendor-jobs/dto/resolve-dispute.dto';
+import { AdsService } from '../ads/ads.service';
 
 function mapUserRoleToConversationRole(
   userRole: Role,
@@ -69,6 +70,7 @@ export class AdminController {
     private readonly featuredPropertiesService: FeaturedPropertiesService,
     private readonly kycService: KycService,
     private readonly vendorJobsService: VendorJobsService,
+    private readonly adsService: AdsService,
   ) {}
 
   private checkAdminAccess(role: Role) {
@@ -457,6 +459,36 @@ export class AdminController {
   ) {
     this.checkAdminAccess(user.role);
     return this.featuredPropertiesService.remove(id);
+  }
+
+  // ─── Brand ads (paid advertising review) ──────────────────────────────────
+
+  @Get('ads')
+  async listAds(
+    @CurrentUser() user: any,
+    @Query('page') page?: number,
+    @Query('limit') limit?: number,
+    @Query('status') status?: string,
+  ) {
+    this.checkAdminAccess(user.role);
+    return this.adsService.adminList({
+      page: page ? Number(page) : 1,
+      limit: limit ? Number(limit) : 50,
+      status,
+    });
+  }
+
+  @Patch('ads/:id/status')
+  async setAdStatus(
+    @CurrentUser() user: any,
+    @Param('id') id: string,
+    @Body() body: { action: 'approve' | 'reject' | 'pause' | 'resume'; adminNote?: string },
+  ) {
+    this.checkAdminAccess(user.role);
+    if (!['approve', 'reject', 'pause', 'resume'].includes(body.action)) {
+      throw new NotFoundException('Unknown action');
+    }
+    return this.adsService.adminSetStatus(id, body.action, body.adminNote);
   }
 
   // ─── Identity / KYC review ────────────────────────────────────────────────

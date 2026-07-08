@@ -138,6 +138,8 @@ export class PaymentsController {
       const meta = event.data.metadata as Record<string, any> | null;
       if (meta?.type === 'agent_subscription') {
         await this.paymentsService.handleSubscriptionChargeSuccess(event.data);
+      } else if (meta?.type === 'brand_ad') {
+        await this.paymentsService.handleAdChargeSuccess(event.data.reference);
       } else {
         await this.paymentsService.handleChargeSuccess(event.data.reference);
       }

@@ -187,6 +187,39 @@ export class PaymentsService {
     }
   }
 
+  /**
+   * charge.success for a brand ad (metadata.type === 'brand_ad'). Lives here
+   * rather than AdsService so the webhook doesn't need a circular module
+   * import (AdsModule → PaymentsModule for Paystack). Idempotent.
+   */
+  async handleAdChargeSuccess(reference: string): Promise<void> {
+    const ad = await this.prisma.brandAd.findUnique({
+      where: { paymentRef: reference },
+    });
+    if (!ad || ad.status !== 'DRAFT') return;
+
+    try {
+      const txn = await this.paystackService.verifyTransaction(reference);
+      if (txn.status !== 'success') return;
+      if (txn.amount !== ad.amountNaira * 100) {
+        console.warn(
+          `Ad payment amount mismatch for ${reference}: expected ${ad.amountNaira * 100}, got ${txn.amount}`,
+        );
+        return;
+      }
+      await this.prisma.brandAd.update({
+        where: { id: ad.id },
+        data: { status: 'PENDING_REVIEW', paidAt: new Date() },
+      });
+      console.log(`Brand ad ${ad.id} paid via ${reference} → PENDING_REVIEW`);
+    } catch (error: any) {
+      console.error(
+        `Error handling brand-ad charge.success for ${reference}:`,
+        error.message,
+      );
+    }
+  }
+
   async releaseEscrow(jobId: string, buyerUserId: string): Promise<void> {
     const job = await this.prisma.vendorJob.findUnique({
       where: { id: jobId },

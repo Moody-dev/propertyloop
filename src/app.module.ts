@@ -35,6 +35,7 @@ import { OffersModule } from './offers/offers.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { KycModule } from './kyc/kyc.module';
 import { FeedModule } from './feed/feed.module';
+import { AdsModule } from './ads/ads.module';
 
 @Module({
   imports: [
@@ -76,6 +77,7 @@ import { FeedModule } from './feed/feed.module';
     NotificationsModule,
     KycModule,
     FeedModule,
+    AdsModule,
   ],
   controllers: [AppController],
   providers: [AppService, { provide: APP_GUARD, useClass: ThrottlerGuard }],

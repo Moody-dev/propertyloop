@@ -101,6 +101,27 @@ export class UploadController {
     };
   }
 
+  // Brand-ad creatives — advertisers are signed-in users, so require auth.
+  @UseGuards(JwtAuthGuard)
+  @Post('ad-image')
+  @UseInterceptors(
+    FileInterceptor('file', { limits: { fileSize: 10 * 1024 * 1024 } }),
+  )
+  async uploadAdImage(@UploadedFile() file: any) {
+    if (!file) {
+      throw new BadRequestException('No file provided');
+    }
+    if (!file.mimetype.startsWith('image/')) {
+      throw new BadRequestException('File must be an image');
+    }
+    const result = await this.b2Service.uploadFile(file, 'brand-ads');
+    return {
+      url: result.fileUrl,
+      fileName: result.fileName,
+      fileId: result.fileId,
+    };
+  }
+
   // KYC documents are sensitive — require auth (unlike the public upload routes).
   @UseGuards(JwtAuthGuard)
   @Post('kyc-document')
