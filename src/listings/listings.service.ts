@@ -9,11 +9,8 @@ import {
   ListingStatus,
   Prisma,
   Role,
-  SubscriptionStatus,
-  SubscriptionTier,
 } from '../../generated/prisma/client';
 
-import { LISTING_CAPS } from './listing-limits';
 import { CreateListingDto } from './dto/create-listing.dto';
 import { UpdateListingDto } from './dto/update-listing.dto';
 import { ListListingsDto } from './dto/list-listings.dto';
@@ -191,33 +188,9 @@ export class ListingsService {
       if (!agent || agent.role !== Role.AGENT || !agent.agentProfile) {
         throw new ForbiddenException('Only agents can create listings');
       }
-      if (
-        agent.agentProfile.subscriptionStatus !== SubscriptionStatus.ACTIVE
-      ) {
-        throw new ForbiddenException(
-          'An active subscription is required to create listings. Please subscribe or renew to continue.',
-        );
-      }
 
-      // FREE is capped at 3 and STANDARD at 10 active listings; FOUNDING + PRO
-      // are unlimited. Pre-paused listings (LAPSED/expired) don't count toward
-      // the cap because they're not consuming buyer-facing inventory.
-      const tier = agent.agentProfile.subscriptionTier;
-      const cap = tier ? LISTING_CAPS[tier] : undefined;
-      if (cap !== undefined) {
-        const activeCount = await this.prisma.listing.count({
-          where: { agentId, status: ListingStatus.ACTIVE },
-        });
-        if (activeCount >= cap) {
-          const upgradeHint =
-            tier === SubscriptionTier.FREE
-              ? 'Subscribe to Standard or Pro for more.'
-              : 'Upgrade to Pro for unlimited listings, or pause an existing one to make room.';
-          throw new ForbiddenException(
-            `The ${tier === SubscriptionTier.FREE ? 'Free' : 'Standard'} plan is limited to ${cap} active listings. ${upgradeHint}`,
-          );
-        }
-      }
+      // PropertyLoop is free for all agents — no subscription requirement and
+      // no per-tier listing cap. Every agent can create unlimited listings.
 
       const slug = await this.generateUniqueSlug(dto.title);
       const priceLabel = `₦${dto.priceNaira.toLocaleString('en-NG')}`;
