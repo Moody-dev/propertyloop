@@ -194,7 +194,12 @@ export class AuthService {
         settings: true,
       },
     });
-    if (!user || user.deletedAt || !user.isActive) {
+    // Permanently closed accounts stay blocked, full stop. A merely-inactive
+    // account is either an admin suspension (deactivatedAt null — stays
+    // blocked; only an admin can lift it) or a self-deactivation
+    // (deactivatedAt set — the correct password below reactivates it). Same
+    // generic message either way so we don't leak account state.
+    if (!user || user.deletedAt || (!user.isActive && !user.deactivatedAt)) {
       throw new UnauthorizedException('Invalid email or password');
     }
 
@@ -203,10 +208,22 @@ export class AuthService {
       throw new UnauthorizedException('Invalid email or password');
     }
 
+    let reactivated = false;
+    if (user.deactivatedAt) {
+      await this.prisma.user.update({
+        where: { id: user.id },
+        data: { isActive: true, deactivatedAt: null },
+      });
+      user.isActive = true;
+      user.deactivatedAt = null;
+      reactivated = true;
+    }
+
     const tokens = await this.issueTokens(user.id, user.email, user.role, meta);
 
     return {
       user: this.toFullUser(user),
+      ...(reactivated && { reactivated: true }),
       ...tokens,
     };
   }

@@ -67,4 +67,10 @@ export class UsersController {
   deleteAccount(@CurrentUser() user: CurrentUserData) {
     return this.usersService.softDeleteAccount(user.id);
   }
+
+  @Patch('me/deactivate')
+  @HttpCode(HttpStatus.OK)
+  deactivateAccount(@CurrentUser() user: CurrentUserData) {
+    return this.usersService.deactivateAccount(user.id);
+  }
 }

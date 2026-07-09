@@ -480,7 +480,10 @@ export class AdminService {
     }
     return this.prisma.user.update({
       where: { id: userId },
-      data: { isActive },
+      // Admin reactivation also clears a self-deactivation flag if present —
+      // otherwise the user would stay tagged as "self-deactivated" despite an
+      // admin having already restored them.
+      data: { isActive, ...(isActive && { deactivatedAt: null }) },
       select: {
         id: true,
         name: true,

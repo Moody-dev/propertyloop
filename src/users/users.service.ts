@@ -99,6 +99,31 @@ export class UsersService {
     return { success: true };
   }
 
+  /**
+   * Reversible pause: logs the user out everywhere immediately (isActive
+   * false, same as suspension, so the JWT strategy rejects existing tokens
+   * right away). Unlike delete, deactivatedAt (not deletedAt) marks this as
+   * self-service, so AuthService.login() knows a correct password should
+   * reactivate the account rather than staying permanently blocked.
+   */
+  async deactivateAccount(userId: string) {
+    await this.prisma.$transaction([
+      this.prisma.user.update({
+        where: { id: userId },
+        data: { isActive: false, deactivatedAt: new Date() },
+      }),
+      this.prisma.refreshToken.updateMany({
+        where: { userId, revokedAt: null },
+        data: { revokedAt: new Date() },
+      }),
+      this.prisma.session.updateMany({
+        where: { userId, revokedAt: null },
+        data: { revokedAt: new Date() },
+      }),
+    ]);
+    return { success: true };
+  }
+
   private serialize(user: any) {
     return {
       id: user.id,

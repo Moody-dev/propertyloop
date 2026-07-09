@@ -245,12 +245,20 @@ model User {
 
   // Verification & status
   emailVerifiedAt DateTime?
+  // isActive doubles as the admin suspension flag (see AdminService.setUserActive) —
+  // don't repurpose it for self-deactivation, use deactivatedAt instead so the two
+  // can never be confused (a suspended user must not be able to log back in and
+  // silently undo their own suspension).
   isActive        Boolean   @default(true)
 
   // Timestamps
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
-  deletedAt DateTime? // soft delete from Settings → Privacy → Delete account
+  deletedAt DateTime? // soft delete from Settings → Danger zone → Delete account (permanent)
+  // Self-service pause from Settings → Danger zone → Deactivate account. Logs the
+  // user out everywhere; logging back in with the correct password reactivates
+  // (clears this) and proceeds normally. Distinct from isActive/admin suspension.
+  deactivatedAt DateTime?
 
   // Role-specific 1:1
   buyerProfile      BuyerProfile?
