@@ -269,13 +269,14 @@ export class PaymentsService {
     );
   }
 
-  // ─── Vendor wallet withdrawal ─────────────────────────────────────────────
+  // ─── Vendor wallet withdrawal (manual payouts) ────────────────────────────
 
   /**
-   * Vendor moves their AVAILABLE balance to their bank. Initiates one Paystack
-   * transfer per released earning (so each reconciles via the existing
-   * transfer webhook) and flips those earnings to PROCESSING. The amount lands
-   * as PAID once Paystack fires transfer.success.
+   * Vendor requests their AVAILABLE balance. Paystack transfers aren't enabled
+   * on our account, so no money moves here: the earnings flip to PROCESSING
+   * and a PENDING WithdrawalRequest lands in the admin console, where an admin
+   * makes the bank transfer manually and then marks it paid (or rejects it,
+   * returning the earnings to AVAILABLE).
    */
   async withdrawAvailable(vendorUserId: string) {
     const bankAccount = await this.prisma.vendorBankAccount.findUnique({
@@ -294,89 +295,168 @@ export class PaymentsService {
       throw new BadRequestException('You have no funds available to withdraw.');
     }
 
-    let withdrawn = 0;
-    let failures = 0;
-    let lastError: string | undefined;
-    for (const earning of available) {
-      try {
-        const transferReference = `PLWD-${earning.jobId}-${Date.now()}`;
-        const { transfer_code, status } =
-          await this.paystackService.initiateTransfer({
-            source: 'balance',
-            amount: earning.amount * 100,
-            recipient: bankAccount.paystackRecipientCode,
-            reason: `Payout for job: ${earning.jobTitle}`,
-            reference: transferReference,
-          });
+    const total = available.reduce((sum, e) => sum + e.amount, 0);
 
-        // Live accounts have "OTP for Transfers" on by default: Paystack returns
-        // status 'otp' and freezes the transfer until it's finalized with a code
-        // sent to the merchant — which no automated payout can supply. Treat it
-        // as a failure so the money stays AVAILABLE and the vendor isn't shown a
-        // "processing" transfer that will never land. Fix: disable OTP for
-        // transfers in the Paystack dashboard (Settings → Preferences).
-        if (status === 'otp') {
-          failures += 1;
-          lastError =
-            'Payouts are blocked: turn off "OTP for Transfers" in your Paystack dashboard (Settings → Preferences) so payouts can send automatically.';
-          console.error(
-            `Withdrawal blocked by transfer OTP for earning ${earning.id}. Disable OTP for transfers in the Paystack dashboard.`,
-          );
-          continue;
-        }
+    // One request bundles everything currently withdrawable. Snapshot the bank
+    // details so the admin pays the account that was on file at request time.
+    const request = await this.prisma.$transaction(async (tx) => {
+      const req = await tx.withdrawalRequest.create({
+        data: {
+          vendorUserId,
+          amountNaira: total,
+          bankName: bankAccount.bankName,
+          accountNumber: bankAccount.accountNumber,
+          accountName: bankAccount.accountName,
+        },
+      });
+      await tx.vendorEarning.updateMany({
+        where: { id: { in: available.map((e) => e.id) } },
+        data: {
+          status: EarningStatus.PROCESSING,
+          withdrawalRequestId: req.id,
+        },
+      });
+      return req;
+    });
 
-        await this.prisma.$transaction([
-          this.prisma.vendorEarning.update({
-            where: { id: earning.id },
-            data: { status: EarningStatus.PROCESSING },
-          }),
-          // Correlate the eventual transfer.success webhook back to this job.
-          this.prisma.vendorJob.update({
-            where: { id: earning.jobId },
-            data: { transferCode: transfer_code },
-          }),
-        ]);
-        withdrawn += earning.amount;
-      } catch (error: any) {
-        failures += 1;
-        lastError = error.response?.data?.message || error.message;
-        console.error(
-          `Withdrawal transfer failed for earning ${earning.id}:`,
-          lastError,
-        );
-      }
-    }
-
-    if (withdrawn === 0) {
-      // Always log the raw Paystack reason for the operator — it's almost always
-      // a platform-account/float issue (settlement swept the balance, transfers
-      // not enabled, invalid recipient) that the vendor can't act on.
-      console.error(
-        `Withdrawal blocked for vendor ${vendorUserId}: ${lastError ?? 'unknown'}`,
-      );
-      // "Balance not enough" means OUR Paystack float is empty (collected escrow
-      // has settled to the company bank, not the transferable balance) — not the
-      // vendor's fault. Show them something reassuring instead of an alarming
-      // "your balance is not enough", which reads like they have no money.
-      const isPlatformFloatEmpty =
-        typeof lastError === 'string' &&
-        /balance is not enough|insufficient|not enough/i.test(lastError);
-      throw new BadRequestException(
-        isPlatformFloatEmpty
-          ? "Your payout is being processed and your money is safe — payouts settle within 24 hours. Please try again shortly."
-          : lastError
-            ? `Withdrawal couldn't start: ${lastError}`
-            : 'Could not start your withdrawal. Please try again shortly.',
-      );
-    }
+    console.log(
+      `Withdrawal request ${request.id} created: vendor ${vendorUserId}, ${total} NGN → ${bankAccount.bankName} ${bankAccount.accountNumber}`,
+    );
 
     return {
       success: true,
-      amount: withdrawn,
-      count: available.length - failures,
+      amount: total,
+      count: available.length,
       bankName: bankAccount.bankName,
       accountNumber: bankAccount.accountNumber,
+      // Manual processing — the app copy should say "our team", not "instant".
+      manual: true,
     };
+  }
+
+  // ─── Admin: manual payout queue ───────────────────────────────────────────
+
+  async listWithdrawals(opts: { page: number; limit: number; status?: string }) {
+    const { page, limit } = opts;
+    const skip = (page - 1) * limit;
+
+    const where: any = {};
+    if (opts.status && ['PENDING', 'PAID', 'REJECTED'].includes(opts.status)) {
+      where.status = opts.status;
+    }
+
+    const [items, total, pendingAgg] = await Promise.all([
+      this.prisma.withdrawalRequest.findMany({
+        where,
+        orderBy: { requestedAt: 'desc' },
+        skip,
+        take: limit,
+        include: {
+          vendor: { select: { id: true, name: true, email: true, phone: true } },
+          earnings: { select: { id: true, jobTitle: true, clientName: true, amount: true } },
+        },
+      }),
+      this.prisma.withdrawalRequest.count({ where }),
+      this.prisma.withdrawalRequest.aggregate({
+        where: { status: 'PENDING' },
+        _count: true,
+        _sum: { amountNaira: true },
+      }),
+    ]);
+
+    return {
+      items,
+      total,
+      pendingTotal: pendingAgg._count,
+      pendingAmount: pendingAgg._sum.amountNaira ?? 0,
+      page,
+      limit,
+      pages: Math.ceil(total / limit),
+    };
+  }
+
+  /**
+   * Admin settles a withdrawal after (or instead of) the manual bank transfer.
+   * - paid: earnings → PAID with paidAt; vendor notified the money was sent.
+   * - reject: earnings → back to AVAILABLE (unlinked); vendor notified why.
+   */
+  async decideWithdrawal(
+    withdrawalId: string,
+    action: 'paid' | 'reject',
+    adminNote?: string,
+  ) {
+    const request = await this.prisma.withdrawalRequest.findUnique({
+      where: { id: withdrawalId },
+      include: { earnings: { select: { id: true } } },
+    });
+    if (!request) throw new NotFoundException('Withdrawal request not found');
+    if (request.status !== 'PENDING') {
+      throw new BadRequestException('This withdrawal has already been settled');
+    }
+
+    const earningIds = request.earnings.map((e) => e.id);
+    const now = new Date();
+    const naira = `₦${request.amountNaira.toLocaleString('en-NG')}`;
+    const last4 = request.accountNumber.slice(-4);
+
+    if (action === 'paid') {
+      await this.prisma.$transaction([
+        this.prisma.withdrawalRequest.update({
+          where: { id: withdrawalId },
+          data: {
+            status: 'PAID',
+            processedAt: now,
+            ...(adminNote?.trim() && { adminNote: adminNote.trim() }),
+          },
+        }),
+        this.prisma.vendorEarning.updateMany({
+          where: { id: { in: earningIds } },
+          data: { status: EarningStatus.PAID, paidAt: now },
+        }),
+      ]);
+
+      void this.notifications.notify({
+        userId: request.vendorUserId,
+        type: NotificationType.WITHDRAWAL_PAID,
+        title: 'Withdrawal paid',
+        body: `${naira} has been sent to your ${request.bankName} account ••${last4}.`,
+        data: { withdrawalId },
+      });
+    } else {
+      await this.prisma.$transaction([
+        this.prisma.withdrawalRequest.update({
+          where: { id: withdrawalId },
+          data: {
+            status: 'REJECTED',
+            processedAt: now,
+            adminNote: adminNote?.trim() || null,
+          },
+        }),
+        // The money never left — put it back in the withdrawable balance.
+        this.prisma.vendorEarning.updateMany({
+          where: { id: { in: earningIds } },
+          data: { status: EarningStatus.AVAILABLE, withdrawalRequestId: null },
+        }),
+      ]);
+
+      void this.notifications.notify({
+        userId: request.vendorUserId,
+        type: NotificationType.WITHDRAWAL_REJECTED,
+        title: 'Withdrawal returned to balance',
+        body: adminNote?.trim()
+          ? `${naira} is back in your balance: ${adminNote.trim()}`
+          : `${naira} is back in your withdrawable balance. Contact support if you weren't expecting this.`,
+        data: { withdrawalId },
+      });
+    }
+
+    return this.prisma.withdrawalRequest.findUnique({
+      where: { id: withdrawalId },
+      include: {
+        vendor: { select: { id: true, name: true, email: true, phone: true } },
+        earnings: { select: { id: true, jobTitle: true, clientName: true, amount: true } },
+      },
+    });
   }
 
   async handleTransferSuccess(transferCode: string): Promise<void> {
@@ -551,12 +631,16 @@ export class PaymentsService {
     accountNumber: string;
     bankCode: string;
     bankName: string;
-    paystackRecipientCode: string;
+    paystackRecipientCode: string | null;
     createdAt: Date;
     updatedAt: Date;
   }> {
+    // Best-effort: payouts are settled manually by an admin, so a Paystack
+    // recipient code is only useful for a future automated flow. Never block
+    // saving the payout account (which the admin needs to transfer to) just
+    // because recipient creation is unavailable on our Paystack plan.
+    let recipientCode: string | null = null;
     try {
-      // Create transfer recipient in Paystack
       const { recipient_code } =
         await this.paystackService.createTransferRecipient({
           type: 'nuban',
@@ -565,8 +649,15 @@ export class PaymentsService {
           bank_code: dto.bankCode,
           currency: 'NGN',
         });
+      recipientCode = recipient_code;
+    } catch (error: any) {
+      console.warn(
+        `Paystack recipient creation failed for vendor ${vendorUserId} (continuing — payouts are manual):`,
+        error.response?.data?.message || error.message,
+      );
+    }
 
-      // Upsert bank account in DB
+    try {
       const bankAccount = await this.prisma.vendorBankAccount.upsert({
         where: { vendorUserId },
         create: {
@@ -575,14 +666,14 @@ export class PaymentsService {
           accountNumber: dto.accountNumber,
           bankCode: dto.bankCode,
           bankName: dto.bankName,
-          paystackRecipientCode: recipient_code,
+          paystackRecipientCode: recipientCode,
         },
         update: {
           accountName: dto.accountName,
           accountNumber: dto.accountNumber,
           bankCode: dto.bankCode,
           bankName: dto.bankName,
-          paystackRecipientCode: recipient_code,
+          ...(recipientCode && { paystackRecipientCode: recipientCode }),
         },
       });
 
@@ -601,7 +692,7 @@ export class PaymentsService {
     accountNumber: string;
     bankCode: string;
     bankName: string;
-    paystackRecipientCode: string;
+    paystackRecipientCode: string | null;
     createdAt: Date;
     updatedAt: Date;
   } | null> {

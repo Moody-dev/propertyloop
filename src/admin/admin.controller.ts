@@ -42,6 +42,7 @@ import { VendorJobsService } from '../vendor-jobs/vendor-jobs.service';
 import { AddDisputeMessageDto } from '../vendor-jobs/dto/add-dispute-message.dto';
 import { ResolveDisputeDto } from '../vendor-jobs/dto/resolve-dispute.dto';
 import { AdsService } from '../ads/ads.service';
+import { PaymentsService } from '../payments/payments.service';
 
 function mapUserRoleToConversationRole(
   userRole: Role,
@@ -71,6 +72,7 @@ export class AdminController {
     private readonly kycService: KycService,
     private readonly vendorJobsService: VendorJobsService,
     private readonly adsService: AdsService,
+    private readonly paymentsService: PaymentsService,
   ) {}
 
   private checkAdminAccess(role: Role) {
@@ -459,6 +461,36 @@ export class AdminController {
   ) {
     this.checkAdminAccess(user.role);
     return this.featuredPropertiesService.remove(id);
+  }
+
+  // ─── Vendor withdrawals (manual payout queue) ─────────────────────────────
+
+  @Get('withdrawals')
+  async listWithdrawals(
+    @CurrentUser() user: any,
+    @Query('page') page?: number,
+    @Query('limit') limit?: number,
+    @Query('status') status?: string,
+  ) {
+    this.checkAdminAccess(user.role);
+    return this.paymentsService.listWithdrawals({
+      page: page ? Number(page) : 1,
+      limit: limit ? Number(limit) : 50,
+      status,
+    });
+  }
+
+  @Patch('withdrawals/:id/status')
+  async decideWithdrawal(
+    @CurrentUser() user: any,
+    @Param('id') id: string,
+    @Body() body: { action: 'paid' | 'reject'; adminNote?: string },
+  ) {
+    this.checkAdminAccess(user.role);
+    if (!['paid', 'reject'].includes(body.action)) {
+      throw new NotFoundException('Unknown action');
+    }
+    return this.paymentsService.decideWithdrawal(id, body.action, body.adminNote);
   }
 
   // ─── Brand ads (paid advertising review) ──────────────────────────────────

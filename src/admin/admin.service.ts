@@ -28,9 +28,11 @@ export class AdminService {
         this.prisma.order.count(),
       ]);
 
-    const activeListings = await this.prisma.listing.count({
-      where: { status: 'ACTIVE' },
-    });
+    const [activeListings, pendingWithdrawals] = await Promise.all([
+      this.prisma.listing.count({ where: { status: 'ACTIVE' } }),
+      // Manual payouts an admin still needs to transfer + settle.
+      this.prisma.withdrawalRequest.count({ where: { status: 'PENDING' } }),
+    ]);
 
     return {
       totalUsers,
@@ -39,6 +41,7 @@ export class AdminService {
       totalListings,
       activeListings,
       totalOrders,
+      pendingWithdrawals,
     };
   }
 

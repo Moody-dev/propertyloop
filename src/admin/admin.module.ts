@@ -9,6 +9,7 @@ import { FeaturedPropertiesModule } from '../featured-properties/featured-proper
 import { KycModule } from '../kyc/kyc.module';
 import { VendorJobsModule } from '../vendor-jobs/vendor-jobs.module';
 import { AdsModule } from '../ads/ads.module';
+import { PaymentsModule } from '../payments/payments.module';
 
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import { AdsModule } from '../ads/ads.module';
     KycModule,
     VendorJobsModule,
     AdsModule,
+    PaymentsModule,
   ],
   providers: [AdminService, PrismaService],
   controllers: [AdminController],

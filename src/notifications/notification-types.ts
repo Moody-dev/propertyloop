@@ -31,6 +31,10 @@ export const NotificationType = {
   KYC_APPROVED: 'KYC_APPROVED',
   KYC_REJECTED: 'KYC_REJECTED',
 
+  // Vendor withdrawals (manual payouts settled by an admin)
+  WITHDRAWAL_PAID: 'WITHDRAWAL_PAID', // → vendor. data: { withdrawalId }
+  WITHDRAWAL_REJECTED: 'WITHDRAWAL_REJECTED', // → vendor. data: { withdrawalId }
+
   // Misc
   MESSAGE: 'MESSAGE',
   GENERAL: 'GENERAL',

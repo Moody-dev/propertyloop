@@ -298,6 +298,7 @@ model User {
   vendorBlackouts            VendorBlackout[]          @relation("VendorBlackouts")
   kycSubmission              KycSubmission?            @relation("KycSubmission")
   brandAds                   BrandAd[]                 @relation("BrandAds")
+  withdrawalRequests         WithdrawalRequest[]       @relation("VendorWithdrawals")
 
   // Social feed
   feedPosts     FeedPost[]     @relation("FeedPosts")
@@ -450,10 +451,50 @@ model VendorBankAccount {
   accountNumber         String
   bankCode              String
   bankName              String
-  paystackRecipientCode String
+  // Optional: payouts are processed manually by an admin (Paystack transfers
+  // aren't enabled on our account), so a recipient code is nice-to-have for a
+  // future automated flow, not a requirement to save a bank account.
+  paystackRecipientCode String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Vendor withdrawals — manual payouts. Paystack transfers aren't enabled on
+// our account, so a withdrawal creates a PENDING request that an admin settles
+// by making the bank transfer themselves, then marking it paid (or rejecting,
+// which returns the earnings to the vendor's withdrawable balance).
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum WithdrawalStatus {
+  PENDING // vendor requested — waiting on an admin to transfer manually
+  PAID // admin transferred the money and confirmed
+  REJECTED // admin declined — earnings returned to AVAILABLE
+}
+
+model WithdrawalRequest {
+  id           String @id @default(cuid())
+  vendorUserId String
+  vendor       User   @relation("VendorWithdrawals", fields: [vendorUserId], references: [id], onDelete: Cascade)
+
+  amountNaira Int
+  status      WithdrawalStatus @default(PENDING)
+
+  // Snapshot of the payout account at request time — this is the account the
+  // admin transfers to, even if the vendor edits their bank details later.
+  bankName      String
+  accountNumber String
+  accountName   String
+
+  adminNote   String?
+  requestedAt DateTime  @default(now())
+  processedAt DateTime?
+
+  earnings VendorEarning[]
+
+  @@index([vendorUserId])
+  @@index([status])
 }
 
 model SubscriptionPayment {
@@ -893,7 +934,13 @@ model VendorEarning {
   paidAt     DateTime?
   createdAt  DateTime      @default(now())
 
+  // Set while the earning is inside a manual withdrawal (PROCESSING). Cleared
+  // if the request is rejected (earning returns to AVAILABLE).
+  withdrawalRequestId String?
+  withdrawalRequest   WithdrawalRequest? @relation(fields: [withdrawalRequestId], references: [id], onDelete: SetNull)
+
   @@index([vendorUserId])
+  @@index([withdrawalRequestId])
 }
 
 model VendorReview {
