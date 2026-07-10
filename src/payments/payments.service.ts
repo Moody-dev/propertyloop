@@ -37,6 +37,19 @@ export class PaymentsService {
     });
 
     if (!job) throw new NotFoundException('Job not found');
+    if (job.escrowId) {
+      throw new BadRequestException(
+        'A payment attempt already exists for this job. We are verifying it; do not pay again.',
+      );
+    }
+    if (
+      job.status !== JobStatus.ACCEPTED &&
+      job.status !== JobStatus.IN_PROGRESS
+    ) {
+      throw new BadRequestException(
+        'Escrow can only be funded before the job is completed. Do not attempt payment again; contact support if a prior payment is still verifying.',
+      );
+    }
     if (job.escrowStatus !== EscrowStatus.NONE) {
       throw new BadRequestException(
         'Payment has already been initiated for this job',
