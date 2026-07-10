@@ -38,6 +38,15 @@ import { Throttle } from '@nestjs/throttler';
 const REFRESH_COOKIE = 'pl_refresh_token';
 const REFRESH_COOKIE_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 
+// Optional cookie Domain. Set COOKIE_DOMAIN=.propertyloop.ng once the API is
+// served from a subdomain of the site (e.g. api.propertyloop.ng): the refresh
+// cookie then becomes FIRST-party to the frontend, so browsers (Safari ITP,
+// Chrome 3rd-party-cookie blocking) always send it on /auth/refresh — which is
+// the permanent fix for the "logged out on reload" problem. Left unset, the
+// cookie stays host-only (current cross-site behaviour) — so this is safe to
+// ship before the DNS record exists.
+const COOKIE_DOMAIN = process.env.COOKIE_DOMAIN?.trim() || undefined;
+
 function refreshCookieOptions(req?: Request) {
   // Derive Secure/SameSite from the actual request protocol, NOT NODE_ENV.
   // The frontend (propertyloop.ng) and API live on different domains, so the
@@ -57,6 +66,9 @@ function refreshCookieOptions(req?: Request) {
     sameSite: (isHttps ? 'none' : 'lax') as 'none' | 'lax',
     path: '/api/auth',
     maxAge: REFRESH_COOKIE_MAX_AGE_MS,
+    // Only include `domain` when configured — an undefined domain keeps the
+    // cookie host-only, matching today's behaviour.
+    ...(COOKIE_DOMAIN ? { domain: COOKIE_DOMAIN } : {}),
   };
 }
 
@@ -112,10 +124,17 @@ export class AuthController {
     @Res({ passthrough: true }) res: Response,
   ) {
     const rt = req.cookies?.[REFRESH_COOKIE];
-    // Match the attributes the cookie was set with so the browser actually
-    // drops a SameSite=None; Secure cookie.
-    const { httpOnly, secure, sameSite, path } = refreshCookieOptions(req);
-    res.clearCookie(REFRESH_COOKIE, { httpOnly, secure, sameSite, path });
+    // Match the attributes the cookie was set with (incl. domain) so the
+    // browser actually drops the SameSite=None; Secure cookie.
+    const { httpOnly, secure, sameSite, path, domain } =
+      refreshCookieOptions(req);
+    res.clearCookie(REFRESH_COOKIE, {
+      httpOnly,
+      secure,
+      sameSite,
+      path,
+      ...(domain ? { domain } : {}),
+    });
     return this.authService.logout(user.id, rt);
   }
 
@@ -126,7 +145,10 @@ export class AuthController {
     @CurrentUser() user: CurrentUserData,
     @Res({ passthrough: true }) res: Response,
   ) {
-    res.clearCookie(REFRESH_COOKIE, { path: '/api/auth' });
+    res.clearCookie(REFRESH_COOKIE, {
+      path: '/api/auth',
+      ...(COOKIE_DOMAIN ? { domain: COOKIE_DOMAIN } : {}),
+    });
     return this.authService.logoutAll(user.id);
   }
 
