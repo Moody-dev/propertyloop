@@ -223,6 +223,7 @@ export class VendorsService {
       earningsPaidAgg,
       earningsPendingAgg,
       earningsAvailableAgg,
+      earningsProcessingAgg,
       earningsThisMonthAgg,
       earningsEarnedAgg,
       reviewsCount,
@@ -262,6 +263,13 @@ export class VendorsService {
       }),
       this.prisma.vendorEarning.aggregate({
         where: { vendorUserId: userId, status: EarningStatus.AVAILABLE },
+        _sum: { amount: true },
+      }),
+      // Withdrawn and clearing to the bank — a payout is in flight. Surfaced so
+      // the dashboard can show the same "Processing payout" state the Earnings
+      // screen does (they were inconsistent: one showed it, the other didn't).
+      this.prisma.vendorEarning.aggregate({
+        where: { vendorUserId: userId, status: EarningStatus.PROCESSING },
         _sum: { amount: true },
       }),
       // "Earned this month" — must match vendor-earnings.service.ts's
@@ -313,6 +321,7 @@ export class VendorsService {
     const paid = earningsPaidAgg._sum.amount ?? 0;
     const pending = earningsPendingAgg._sum.amount ?? 0;
     const available = earningsAvailableAgg._sum.amount ?? 0;
+    const processing = earningsProcessingAgg._sum.amount ?? 0;
     const thisMonth = earningsThisMonthAgg._sum.amount ?? 0;
     const earnedTotal = earningsEarnedAgg._sum.amount ?? 0;
 
@@ -334,6 +343,7 @@ export class VendorsService {
         paid,
         pending,
         available,
+        processing,
         thisMonth,
       },
       reviews: {
