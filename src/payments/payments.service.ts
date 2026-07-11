@@ -37,11 +37,9 @@ export class PaymentsService {
     });
 
     if (!job) throw new NotFoundException('Job not found');
-    if (job.escrowId) {
-      throw new BadRequestException(
-        'A payment attempt already exists for this job. We are verifying it; do not pay again.',
-      );
-    }
+    // Escrow can only ever be funded while the vendor is still working. Once the
+    // job is COMPLETED (or beyond), a second checkout must never be possible —
+    // this is the core guard against charging a customer twice for one job.
     if (
       job.status !== JobStatus.ACCEPTED &&
       job.status !== JobStatus.IN_PROGRESS
@@ -54,6 +52,34 @@ export class PaymentsService {
       throw new BadRequestException(
         'Payment has already been initiated for this job',
       );
+    }
+
+    // A prior checkout reference already exists but escrow is still unlocked.
+    // Don't blindly open a new checkout (would risk a double charge) and don't
+    // blindly block (would strand a buyer who abandoned the first checkout).
+    // Ask Paystack what actually happened to that reference and decide:
+    //   • charged successfully  → heal it (lock escrow) and refuse a re-charge
+    //   • abandoned / failed     → let the buyer retry with a fresh reference
+    if (job.escrowId) {
+      let priorSucceeded = false;
+      try {
+        const txn = await this.paystackService.verifyTransaction(job.escrowId);
+        priorSucceeded = txn.status === 'success';
+      } catch {
+        // Reference unknown/unverifiable at Paystack → treat as not paid so the
+        // buyer isn't stranded; a genuine charge is still protected by the
+        // amount + idempotency checks in handleChargeSuccess.
+        priorSucceeded = false;
+      }
+      if (priorSucceeded) {
+        // Reconcile the real charge, then stop — never a second checkout.
+        await this.handleChargeSuccess(job.escrowId);
+        throw new BadRequestException(
+          'This job is already paid — we are securing it in escrow now. Do not pay again; pull to refresh in a moment.',
+        );
+      }
+      // Otherwise fall through and mint a new reference below, overwriting the
+      // abandoned one so refunds/webhooks track the reference actually charged.
     }
 
     const amountKobo = job.escrowAmount * 100;
