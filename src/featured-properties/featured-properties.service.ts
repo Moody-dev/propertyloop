@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { cleanDescription } from '../common/utils/sanitize';
 import { PrismaService } from '../prisma/prisma.service';
 import { MediaUrlService } from '../media/media-url.service';
 
@@ -61,7 +62,7 @@ export class FeaturedPropertiesService {
         beds: dto.beds ?? 0,
         baths: dto.baths ?? 0,
         sqft: dto.sqft,
-        description: dto.description,
+        description: cleanDescription(dto.description),
         imageUrls: dto.imageUrls,
         videoUrl: dto.videoUrl,
         videoUrls: dto.videoUrls ?? [],
@@ -79,6 +80,9 @@ export class FeaturedPropertiesService {
     if (!existing) throw new NotFoundException('Featured property not found');
 
     const data: any = { ...dto };
+    if (dto.description !== undefined) {
+      data.description = cleanDescription(dto.description);
+    }
     if (dto.priceNaira !== undefined && !dto.priceLabel?.trim()) {
       data.priceLabel = `₦${Number(dto.priceNaira).toLocaleString('en-NG')}`;
     }

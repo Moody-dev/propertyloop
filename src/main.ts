@@ -53,15 +53,19 @@ async function bootstrap() {
   // json() parser consumes the stream before Nest's built-in rawBody capture
   // can, so we stash the buffer here — otherwise @RawBody() on /payments/webhook
   // is empty and every webhook fails signature verification silently.
+  // 2mb comfortably covers our largest JSON payloads (a listing create with a
+  // rich-text description + media URLs). File uploads don't pass through here —
+  // they're multipart, parsed by multer with its own per-route size caps — so a
+  // large limit only widens the memory-exhaustion DoS surface for free.
   app.use(
     json({
-      limit: '100mb',
+      limit: '2mb',
       verify: (req, _res, buf: Buffer) => {
         (req as unknown as { rawBody?: Buffer }).rawBody = buf;
       },
     }),
   );
-  app.use(urlencoded({ limit: '100mb', extended: true }));
+  app.use(urlencoded({ limit: '2mb', extended: true }));
   app.use(cookieParser());
   app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
   app.use(compression());

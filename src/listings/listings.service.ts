@@ -4,6 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { cleanDescription } from '../common/utils/sanitize';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   ListingStatus,
@@ -213,7 +214,7 @@ export class ListingsService {
           // an empty string when the agent leaves size blank.
           sqft: dto.sqft ?? '',
           yearBuilt: dto.yearBuilt,
-          description: dto.description,
+          description: cleanDescription(dto.description),
           features: dto.features,
           coverImage: dto.coverImage,
           images: dto.images,
@@ -317,7 +318,8 @@ export class ListingsService {
     if (dto.baths !== undefined) data.baths = dto.baths;
     if (dto.sqft !== undefined) data.sqft = dto.sqft;
     if (dto.yearBuilt !== undefined) data.yearBuilt = dto.yearBuilt;
-    if (dto.description !== undefined) data.description = dto.description;
+    if (dto.description !== undefined)
+      data.description = cleanDescription(dto.description);
     if (dto.features !== undefined) data.features = dto.features;
     if (dto.coverImage !== undefined) data.coverImage = dto.coverImage;
     if (dto.images !== undefined) data.images = dto.images;
