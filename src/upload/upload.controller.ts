@@ -173,6 +173,31 @@ export class UploadController {
    * the API dropped mid-stream on mobile networks ("Network Error"), which is
    * why image attachments were failing. The bytes go straight to storage.
    */
+  /**
+   * Presigned direct-to-R2 PUT for a profile picture. Mobile clients must use
+   * this rather than the multipart /upload/profile-picture route: proxying
+   * multipart/form-data through the API drops mid-stream on mobile networks
+   * ("Network Error"), the same reason chat + listing uploads went presigned.
+   * Guarded — only a signed-in user sets their own avatar.
+   */
+  @UseGuards(JwtAuthGuard)
+  @Post('avatar/presign')
+  async presignAvatar(
+    @Body() body: { filename?: string; contentType?: string },
+  ) {
+    const contentType = body?.contentType ?? '';
+    if (!contentType.startsWith('image/')) {
+      throw new BadRequestException('File must be an image');
+    }
+    const filename = body?.filename ?? `avatar-${Date.now()}.jpg`;
+    const { uploadUrl, fileUrl } = await this.b2Service.getPresignedPutUrl({
+      folder: 'profile-pictures',
+      filename,
+      contentType,
+    });
+    return { uploadUrl, fileUrl };
+  }
+
   @Post('message-attachment/presign')
   async presignMessageAttachment(
     @Body() body: { filename?: string; contentType?: string },
