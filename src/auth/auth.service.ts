@@ -24,6 +24,7 @@ import {
   VerifyResetCodeDto,
 } from './dto/forgot-password.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
+import { allocateUniqueReferralCode } from '../common/referral';
 
 interface SessionMeta {
   userAgent?: string;
@@ -106,6 +107,24 @@ export class AuthService {
 
     const passwordHash = await bcrypt.hash(dto.password, 12);
 
+    // Resolve the referrer, if a referral code came with the signup. Unknown,
+    // suspended, or deleted referrers are silently ignored — a bad code must
+    // never block account creation.
+    let referredById: string | undefined;
+    if (dto.referralCode?.trim()) {
+      const referrer = await this.prisma.user.findUnique({
+        where: { referralCode: dto.referralCode.trim().toUpperCase() },
+        select: { id: true, isActive: true, deletedAt: true },
+      });
+      if (referrer && referrer.isActive && !referrer.deletedAt) {
+        referredById = referrer.id;
+      }
+    }
+
+    // Every new user gets their own referral code from day one (all roles —
+    // the referral program is not limited to agents/vendors).
+    const referralCode = await allocateUniqueReferralCode(this.prisma);
+
     // Create user + role-specific profile + default settings in one transaction
     const user = await this.prisma.user.create({
       data: {
@@ -114,6 +133,8 @@ export class AuthService {
         name: dto.name,
         phone: dto.phone,
         role: dto.role,
+        referralCode,
+        ...(referredById && { referredById }),
         settings: { create: {} },
         ...(dto.role === Role.BUYER && {
           buyerProfile: {
@@ -154,6 +175,24 @@ export class AuthService {
     // NOTE: The free-forever FOUNDING tier is now frozen to accounts that
     // already hold it — new signups (waitlisted or not) start on FREE (3
     // listings) and pay to lift the cap. See agentProfile.create above.
+
+    // Let the referrer know their link converted (in-app, best-effort — a
+    // notification failure must never break the signup).
+    if (referredById) {
+      this.prisma.notification
+        .create({
+          data: {
+            userId: referredById,
+            type: 'REFERRAL_SIGNUP',
+            title: 'Your referral link worked 🎉',
+            body: `${user.name} just joined PropertyLoop through your referral link.`,
+            data: { referredUserId: user.id },
+          },
+        })
+        .catch((err) =>
+          console.error('Referral notification failed:', err),
+        );
+    }
 
     // Issue email verification token (fire-and-forget email)
     await this.sendEmailVerification(user.id, user.email, user.name);
@@ -796,6 +835,7 @@ export class AuthService {
       bio: user.bio,
       avatarUrl: user.avatarUrl,
       emailVerifiedAt: user.emailVerifiedAt,
+      referralCode: user.referralCode,
       createdAt: user.createdAt,
     };
   }

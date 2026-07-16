@@ -1,12 +1,65 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { UpdateSettingsDto } from './dto/update-settings.dto';
 import { UpdateBuyerProfileDto } from './dto/update-buyer-profile.dto';
+import {
+  allocateUniqueReferralCode,
+  buildReferralLink,
+} from '../common/referral';
 
 @Injectable()
 export class UsersService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly configService: ConfigService,
+  ) {}
+
+  /**
+   * The signed-in user's referral panel: their personalized link, code, and
+   * everyone who signed up through it. Accounts that predate the referral
+   * program have no code yet — mint one on first visit so the program is
+   * retroactively open to every user, regardless of role.
+   */
+  async getMyReferrals(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, referralCode: true },
+    });
+    if (!user) throw new NotFoundException('User not found');
+
+    let code = user.referralCode;
+    if (!code) {
+      code = await allocateUniqueReferralCode(this.prisma);
+      await this.prisma.user.update({
+        where: { id: userId },
+        data: { referralCode: code },
+      });
+    }
+
+    const referrals = await this.prisma.user.findMany({
+      where: { referredById: userId, deletedAt: null },
+      select: {
+        id: true,
+        name: true,
+        role: true,
+        avatarUrl: true,
+        createdAt: true,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    const frontendUrl =
+      this.configService.get<string>('FRONTEND_URL') || 'http://localhost:5173';
+
+    return {
+      referralCode: code,
+      referralLink: buildReferralLink(frontendUrl, code),
+      totalReferrals: referrals.length,
+      referrals,
+    };
+  }
 
   async getProfile(userId: string) {
     const user = await this.prisma.user.findUnique({
@@ -135,6 +188,7 @@ export class UsersService {
       bio: user.bio,
       avatarUrl: user.avatarUrl,
       emailVerifiedAt: user.emailVerifiedAt,
+      referralCode: user.referralCode,
       createdAt: user.createdAt,
       buyerProfile: user.buyerProfile,
       agentProfile: user.agentProfile,

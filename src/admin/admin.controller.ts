@@ -112,6 +112,30 @@ export class AdminController {
     return this.adminService.setUserActive(id, body.isActive);
   }
 
+  @Get('referrals')
+  async listReferrals(
+    @CurrentUser() user: any,
+    @Query('page') page?: number,
+    @Query('limit') limit?: number,
+    @Query('search') search?: string,
+  ) {
+    this.checkAdminAccess(user.role);
+    return this.adminService.listReferrals({
+      page: page ? Number(page) : 1,
+      limit: limit ? Number(limit) : 50,
+      search,
+    });
+  }
+
+  @Get('referrals/:userId')
+  async listUserReferrals(
+    @CurrentUser() user: any,
+    @Param('userId') userId: string,
+  ) {
+    this.checkAdminAccess(user.role);
+    return this.adminService.listUserReferrals(userId);
+  }
+
   @Get('orders')
   async listOrders(
     @CurrentUser() user: any,

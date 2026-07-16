@@ -49,6 +49,11 @@ export class UsersController {
     return this.usersService.updateBuyerProfile(user.id, dto);
   }
 
+  @Get('me/referrals')
+  getMyReferrals(@CurrentUser() user: CurrentUserData) {
+    return this.usersService.getMyReferrals(user.id);
+  }
+
   @Get('me/settings')
   getSettings(@CurrentUser() user: CurrentUserData) {
     return this.usersService.getSettings(user.id);

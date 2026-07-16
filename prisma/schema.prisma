@@ -260,6 +260,16 @@ model User {
   // (clears this) and proceeds normally. Distinct from isActive/admin suspension.
   deactivatedAt DateTime?
 
+  // Referral program — every user (any role) gets a unique shareable code;
+  // their personalized link is FRONTEND_URL/onboarding?ref=<code>. When a new
+  // signup arrives with a valid code, referredById records who referred them
+  // so admin can tally referrals per user for rewards. Nullable because
+  // accounts that predate the program get a code minted lazily on first use.
+  referralCode String? @unique
+  referredById String?
+  referredBy   User?   @relation("UserReferrals", fields: [referredById], references: [id], onDelete: SetNull)
+  referrals    User[]  @relation("UserReferrals")
+
   // Role-specific 1:1
   buyerProfile      BuyerProfile?
   agentProfile      AgentProfile?

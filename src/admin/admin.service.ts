@@ -92,6 +92,89 @@ export class AdminService {
     };
   }
 
+  /**
+   * Referral leaderboard for the admin panel: every user with how many
+   * signups their personal link brought in (plus who referred *them*), so
+   * rewards can be paid out per referrer. Sorted by referral count.
+   */
+  async listReferrals(options: {
+    page: number;
+    limit: number;
+    search?: string;
+  }) {
+    const { page, limit, search } = options;
+    const skip = (page - 1) * limit;
+
+    const where: Prisma.UserWhereInput = { deletedAt: null };
+    if (search) {
+      where.OR = [
+        { name: { contains: search, mode: 'insensitive' } },
+        { email: { contains: search, mode: 'insensitive' } },
+        { referralCode: { equals: search.trim().toUpperCase() } },
+      ];
+    }
+
+    const [items, total, totalReferredSignups] = await Promise.all([
+      this.prisma.user.findMany({
+        where,
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          role: true,
+          referralCode: true,
+          createdAt: true,
+          referredBy: { select: { id: true, name: true, email: true } },
+          _count: { select: { referrals: true } },
+        },
+        skip,
+        take: limit,
+        orderBy: [{ referrals: { _count: 'desc' } }, { createdAt: 'desc' }],
+      }),
+      this.prisma.user.count({ where }),
+      this.prisma.user.count({
+        where: { referredById: { not: null }, deletedAt: null },
+      }),
+    ]);
+
+    return {
+      items: items.map(({ _count, ...u }) => ({
+        ...u,
+        referralCount: _count.referrals,
+      })),
+      total,
+      page,
+      limit,
+      pages: Math.ceil(total / limit),
+      totalReferredSignups,
+    };
+  }
+
+  /** Everyone a given user referred — the admin drill-down for one referrer. */
+  async listUserReferrals(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, name: true, email: true, referralCode: true },
+    });
+    if (!user) throw new NotFoundException('User not found');
+
+    const referrals = await this.prisma.user.findMany({
+      where: { referredById: userId },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        createdAt: true,
+        isActive: true,
+        deletedAt: true,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    return { user, totalReferrals: referrals.length, referrals };
+  }
+
   async listOrders(options: { page: number; limit: number; status?: string }) {
     const { page, limit, status } = options;
     const skip = (page - 1) * limit;

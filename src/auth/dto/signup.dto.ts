@@ -81,6 +81,15 @@ export class SignupDto {
   @IsEnum(Role)
   role: Role;
 
+  /**
+   * Referral code of the user who shared their link
+   * (onboarding?ref=<code>). Invalid/unknown codes are silently ignored —
+   * a bad code must never block a signup.
+   */
+  @IsString()
+  @IsOptional()
+  referralCode?: string;
+
   @ValidateNested()
   @Type(() => BuyerSignupDataDto)
   @IsOptional()
