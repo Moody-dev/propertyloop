@@ -33,9 +33,11 @@ export class AgentSignupDataDto {
   @IsNotEmpty()
   agencyName: string;
 
+  // Optional — agents can register without a CAC/RC or professional
+  // registration number. Left blank, it's stored as NULL.
   @IsString()
-  @IsNotEmpty()
-  licenseNumber: string;
+  @IsOptional()
+  licenseNumber?: string;
 
   @IsString()
   @IsNotEmpty()

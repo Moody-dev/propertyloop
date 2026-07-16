@@ -351,7 +351,10 @@ model AgentProfile {
 
   // Onboarding fields
   agencyName      String
-  licenseNumber   String @unique
+  // Optional so agents without a CAC/RC number to hand can still register
+  // (lowers the signup barrier). Still @unique — Postgres allows many NULLs,
+  // so blank agents don't collide, but a real number stays one-per-agent.
+  licenseNumber   String? @unique
   businessAddress String
 
   // Profile + directory fields (Agent interface in src/data/agents.ts)

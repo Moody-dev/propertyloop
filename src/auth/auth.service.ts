@@ -94,9 +94,12 @@ export class AuthService {
       throw new BadRequestException('Vendor profile data is required');
     }
 
-    if (dto.role === Role.AGENT && dto.agent?.licenseNumber) {
+    // License/RC number is optional. Only enforce uniqueness when the agent
+    // actually provided one (blank stays NULL and never collides).
+    const licenseNumber = dto.agent?.licenseNumber?.trim() || null;
+    if (dto.role === Role.AGENT && licenseNumber) {
       const dupe = await this.prisma.agentProfile.findUnique({
-        where: { licenseNumber: dto.agent.licenseNumber },
+        where: { licenseNumber },
       });
       if (dupe) {
         throw new ConflictException(
@@ -149,7 +152,7 @@ export class AuthService {
           agentProfile: {
             create: {
               agencyName: dto.agent!.agencyName,
-              licenseNumber: dto.agent!.licenseNumber,
+              licenseNumber, // normalized above; null when not provided
               businessAddress: dto.agent!.businessAddress,
               // New agents start on the FREE tier (capped at 3 active
               // listings). Waitlisted/early agents get upgraded to the
