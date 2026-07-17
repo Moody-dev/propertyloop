@@ -112,6 +112,21 @@ export class AdminController {
     return this.adminService.setUserActive(id, body.isActive);
   }
 
+  // Kick one user off all their devices (revokes their refresh tokens +
+  // sessions; access tokens die on their own within 15 min).
+  @Post('users/:id/logout-all')
+  async forceLogoutUser(@CurrentUser() user: any, @Param('id') id: string) {
+    this.checkAdminAccess(user.role);
+    return this.adminService.forceLogoutUser(id);
+  }
+
+  // Site-wide session reset — logs every user out except the acting admin.
+  @Post('users/logout-everyone')
+  async forceLogoutEveryone(@CurrentUser() user: any) {
+    this.checkAdminAccess(user.role);
+    return this.adminService.forceLogoutEveryone(user.id);
+  }
+
   @Get('referrals')
   async listReferrals(
     @CurrentUser() user: any,

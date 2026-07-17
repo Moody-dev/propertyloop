@@ -578,4 +578,51 @@ export class AdminService {
       },
     });
   }
+
+  /**
+   * Force-logs a user out of every device by revoking all their refresh
+   * tokens and sessions. Their in-memory access token keeps working until it
+   * expires (≤15 min), after which the silent refresh fails and the client
+   * redirects to /login.
+   */
+  async forceLogoutUser(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, email: true },
+    });
+    if (!user) throw new NotFoundException('User not found');
+
+    const now = new Date();
+    const [tokens, sessions] = await Promise.all([
+      this.prisma.refreshToken.updateMany({
+        where: { userId, revokedAt: null },
+        data: { revokedAt: now },
+      }),
+      this.prisma.session.updateMany({
+        where: { userId, revokedAt: null },
+        data: { revokedAt: now },
+      }),
+    ]);
+    return { revokedTokens: tokens.count, revokedSessions: sessions.count };
+  }
+
+  /**
+   * Site-wide force logout: revokes every active refresh token and session,
+   * except the acting admin's — so the admin doing the reset isn't kicked
+   * out of their own panel mid-action.
+   */
+  async forceLogoutEveryone(exceptUserId: string) {
+    const now = new Date();
+    const [tokens, sessions] = await Promise.all([
+      this.prisma.refreshToken.updateMany({
+        where: { revokedAt: null, userId: { not: exceptUserId } },
+        data: { revokedAt: now },
+      }),
+      this.prisma.session.updateMany({
+        where: { revokedAt: null, userId: { not: exceptUserId } },
+        data: { revokedAt: now },
+      }),
+    ]);
+    return { revokedTokens: tokens.count, revokedSessions: sessions.count };
+  }
 }
