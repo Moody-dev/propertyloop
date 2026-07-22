@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { UpdateProfileDto } from './dto/update-profile.dto';
+import { assertNotObjectionable } from '../common/content-filter';
 import { UpdateSettingsDto } from './dto/update-settings.dto';
 import { UpdateBuyerProfileDto } from './dto/update-buyer-profile.dto';
 import {
@@ -76,6 +77,8 @@ export class UsersService {
   }
 
   async updateProfile(userId: string, dto: UpdateProfileDto) {
+    assertNotObjectionable(dto.bio, 'Bio');
+
     const updated = await this.prisma.user.update({
       where: { id: userId },
       data: {

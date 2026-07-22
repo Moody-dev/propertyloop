@@ -211,6 +211,8 @@ enum ReportTargetType {
   AGENT
   VENDOR
   LISTING
+  USER
+  MESSAGE
 }
 
 enum SubscriptionTier {
@@ -305,6 +307,8 @@ model User {
   shortletBookings           ShortletBooking[]         @relation("BuyerShortlets")
   rentalApplications         RentalApplication[]       @relation("BuyerRentals")
   reports                    Report[]                  @relation("UserReports")
+  blocksMade                 BlockedUser[]             @relation("BlocksMade")
+  blocksReceived             BlockedUser[]             @relation("BlocksReceived")
   buyerOffers                Offer[]                   @relation("BuyerOffers")
   agentOffers                Offer[]                   @relation("AgentOffers")
   buyerPurchases             PropertyPurchase[]        @relation("BuyerPurchases")
@@ -1249,6 +1253,25 @@ model Report {
   @@index([targetType, targetId])
   @@index([status])
   @@index([reporterId])
+}
+
+// Blocking another user is instant and client-enforced: it hides that user's
+// content from the blocker (conversation, listings, profile) and stops them
+// from messaging the blocker again. Also creates a Report (targetType USER)
+// so the team reviews the blocked account — App Store guideline 1.2 requires
+// blocking to notify the developer of the inappropriate content, not just
+// silently hide it from the blocker.
+model BlockedUser {
+  id        String   @id @default(cuid())
+  blockerId String
+  blocker   User     @relation("BlocksMade", fields: [blockerId], references: [id], onDelete: Cascade)
+  blockedId String
+  blocked   User     @relation("BlocksReceived", fields: [blockedId], references: [id], onDelete: Cascade)
+  reason    String?
+  createdAt DateTime @default(now())
+
+  @@unique([blockerId, blockedId])
+  @@index([blockedId])
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

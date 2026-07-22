@@ -28,6 +28,7 @@ import { PaymentsModule } from './payments/payments.module';
 import { AdminModule } from './admin/admin.module';
 import { UploadModule } from './upload/upload.module';
 import { ReportsModule } from './reports/reports.module';
+import { BlocksModule } from './blocks/blocks.module';
 import { AppWaitlistModule } from './app-waitlist/app-waitlist.module';
 import { ValuationsModule } from './valuations/valuations.module';
 import { FeaturedPropertiesModule } from './featured-properties/featured-properties.module';
@@ -70,6 +71,7 @@ import { AdsModule } from './ads/ads.module';
     AdminModule,
     UploadModule,
     ReportsModule,
+    BlocksModule,
     AppWaitlistModule,
     ValuationsModule,
     FeaturedPropertiesModule,

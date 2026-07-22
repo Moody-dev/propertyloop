@@ -4,6 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { assertNotObjectionable } from '../common/content-filter';
 import {
   EarningStatus,
   EscrowStatus,
@@ -176,6 +177,8 @@ export class VendorsService {
     if (!user || user.role !== Role.VENDOR || !user.vendorProfile) {
       throw new ForbiddenException('Vendor profile not found');
     }
+
+    assertNotObjectionable(dto.bio, 'Bio');
 
     const updated = await this.prisma.user.update({
       where: { id: userId },
@@ -380,6 +383,8 @@ export class VendorsService {
     });
     if (!vendor || !vendor.vendorProfile) throw new NotFoundException('Vendor not found');
 
+    assertNotObjectionable(dto.comment, 'Review');
+
     let clientName = dto.reviewerName?.trim();
     let clientAvatar = dto.reviewerAvatar;
     if (reviewerUserId) {
@@ -440,6 +445,7 @@ export class VendorsService {
     if (review.vendorUserId !== vendorUserId) {
       throw new ForbiddenException('This review is not on your profile');
     }
+    assertNotObjectionable(reply, 'Reply');
     return this.prisma.vendorReview.update({
       where: { id: reviewId },
       data: { reply, repliedAt: new Date() },

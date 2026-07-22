@@ -5,6 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { cleanDescription } from '../common/utils/sanitize';
+import { assertNotObjectionable } from '../common/content-filter';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   ListingStatus,
@@ -193,6 +194,9 @@ export class ListingsService {
       // PropertyLoop is free for all agents — no subscription requirement and
       // no per-tier listing cap. Every agent can create unlimited listings.
 
+      assertNotObjectionable(dto.title, 'Listing title');
+      assertNotObjectionable(dto.description, 'Listing description');
+
       const slug = await this.generateUniqueSlug(dto.title);
       const priceLabel = `₦${dto.priceNaira.toLocaleString('en-NG')}`;
 
@@ -290,6 +294,9 @@ export class ListingsService {
     if (listing.agentId !== agentId) {
       throw new ForbiddenException('You can only edit your own listings');
     }
+
+    assertNotObjectionable(dto.title, 'Listing title');
+    assertNotObjectionable(dto.description, 'Listing description');
 
     const data: Prisma.ListingUpdateInput = {};
     if (dto.title !== undefined) data.title = dto.title;

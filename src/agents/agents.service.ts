@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
+import { assertNotObjectionable } from '../common/content-filter';
 import {
   ListingStatus,
   Role,
@@ -178,6 +179,8 @@ export class AgentsService {
       throw new ForbiddenException('Agent profile not found');
     }
 
+    assertNotObjectionable(dto.bio, 'Bio');
+
     const updated = await this.prisma.user.update({
       where: { id: userId },
       data: {
@@ -304,6 +307,8 @@ export class AgentsService {
     });
     if (!agent || !agent.agentProfile)
       throw new NotFoundException('Agent not found');
+
+    assertNotObjectionable(dto.comment, 'Review');
 
     let reviewerName = dto.reviewerName?.trim();
     if (reviewerUserId) {

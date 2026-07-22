@@ -16,6 +16,7 @@ import { CreateConversationDto } from './dto/create-conversation.dto';
 import { SendMessageDto } from './dto/send-message.dto';
 import { ListConversationsDto, ListMessagesDto } from './dto/list-conversations.dto';
 import { ChatGateway } from './chat.gateway';
+import { assertNotObjectionable } from '../common/content-filter';
 
 // Admin identities are masked behind the PropertyLoop brand when shown to
 // non-admin users so support/system messages appear to come from the
@@ -64,9 +65,26 @@ export class MessagesService {
       return { items: [], total: 0, page, limit, pages: 0 };
     }
 
+    // Blocking (either direction) removes the conversation from view
+    // instantly — the blocker no longer wants to see it, and the blocked
+    // party can no longer send into it anyway (App Store guideline 1.2).
+    const blockRows = await this.prisma.blockedUser.findMany({
+      where: { OR: [{ blockerId: userId }, { blockedId: userId }] },
+      select: { blockerId: true, blockedId: true },
+    });
+    const blockedOtherIds = blockRows.map((r) =>
+      r.blockerId === userId ? r.blockedId : r.blockerId,
+    );
+    const where: Prisma.ConversationWhereInput = {
+      id: { in: convoIds },
+      ...(blockedOtherIds.length > 0 && {
+        participants: { none: { userId: { in: blockedOtherIds } } },
+      }),
+    };
+
     const [conversations, total] = await Promise.all([
       this.prisma.conversation.findMany({
-        where: { id: { in: convoIds } },
+        where,
         orderBy: { updatedAt: 'desc' },
         skip,
         take: limit,
@@ -84,7 +102,7 @@ export class MessagesService {
           },
         },
       }),
-      convoIds.length,
+      this.prisma.conversation.count({ where }),
     ]);
 
     const items = conversations.map((c) => {
@@ -201,6 +219,32 @@ export class MessagesService {
     if (!dto.text?.trim() && !dto.attachmentUrls?.length) {
       throw new BadRequestException('Message must have text or attachments');
     }
+    assertNotObjectionable(dto.text, 'Your message');
+
+    // If either side has blocked the other, the conversation is dead — a
+    // blocked user must not be able to keep messaging the person who blocked
+    // them (App Store guideline 1.2).
+    const others = await this.prisma.conversationParticipant.findMany({
+      where: { conversationId, userId: { not: userId } },
+      select: { userId: true },
+    });
+    if (others.length > 0) {
+      const blocked = await this.prisma.blockedUser.findFirst({
+        where: {
+          OR: others.map((o) => ({
+            OR: [
+              { blockerId: userId, blockedId: o.userId },
+              { blockerId: o.userId, blockedId: userId },
+            ],
+          })),
+        },
+      });
+      if (blocked) {
+        throw new ForbiddenException(
+          'You can no longer message this conversation.',
+        );
+      }
+    }
 
     const message = await this.prisma.message.create({
       data: {
@@ -259,6 +303,19 @@ export class MessagesService {
     });
     if (!recipient) throw new NotFoundException('Recipient not found');
     if (recipient.id === userId) throw new BadRequestException('Cannot message yourself');
+    assertNotObjectionable(dto.text, 'Your message');
+
+    const blocked = await this.prisma.blockedUser.findFirst({
+      where: {
+        OR: [
+          { blockerId: userId, blockedId: recipient.id },
+          { blockerId: recipient.id, blockedId: userId },
+        ],
+      },
+    });
+    if (blocked) {
+      throw new ForbiddenException('You can no longer message this user.');
+    }
 
     // Check if conversation already exists between these two users
     const existingParticipants = await this.prisma.conversationParticipant.findMany({
