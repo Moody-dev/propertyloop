@@ -247,6 +247,12 @@ model User {
 
   // Verification & status
   emailVerifiedAt DateTime?
+  // Which client the account was created from ("mobile" | "web"), captured
+  // once at signup from X-Client-Platform. Used to route the emailed
+  // verification link back to the right place: deep-link into the app for
+  // a mobile signup, /login on the website for a web signup. Needed because
+  // the link is opened outside either client's own request context.
+  signupPlatform  String?
   // isActive doubles as the admin suspension flag (see AdminService.setUserActive) —
   // don't repurpose it for self-deactivation, use deactivatedAt instead so the two
   // can never be confused (a suspended user must not be able to log back in and

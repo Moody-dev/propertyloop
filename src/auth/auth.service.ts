@@ -30,6 +30,8 @@ interface SessionMeta {
   userAgent?: string;
   ipAddress?: string;
   deviceLabel?: string;
+  /** From the X-Client-Platform header: which client this request came from. */
+  platform?: 'mobile' | 'web';
 }
 
 interface AuthTokens {
@@ -44,6 +46,12 @@ export class AuthService {
   private readonly refreshTtlDays: number;
   private readonly sessionTtlDays: number;
   private readonly rotationGraceMs: number;
+  // How long a just-consumed email-verification token is still treated as a
+  // success if presented again. Covers a mail-security scanner beating the
+  // real user to the link. Fixed rather than configurable: unlike refresh-
+  // token rotation this isn't a security-sensitive tradeoff worth tuning per
+  // deployment, just enough slack for a scanner-then-human double-open.
+  private readonly verifyEmailReuseGraceMs = 15 * 60_000;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -137,6 +145,7 @@ export class AuthService {
         phone: dto.phone,
         role: dto.role,
         referralCode,
+        signupPlatform: meta.platform ?? 'web',
         ...(referredById && { referredById }),
         settings: { create: {} },
         ...(dto.role === Role.BUYER && {
@@ -198,7 +207,12 @@ export class AuthService {
     }
 
     // Issue email verification token (fire-and-forget email)
-    await this.sendEmailVerification(user.id, user.email, user.name);
+    await this.sendEmailVerification(
+      user.id,
+      user.email,
+      user.name,
+      user.signupPlatform,
+    );
 
     const tokens = await this.issueTokens(user.id, user.email, user.role, meta);
 
@@ -575,7 +589,13 @@ export class AuthService {
   async resendVerificationEmail(userId: string) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: { id: true, email: true, name: true, emailVerifiedAt: true },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        emailVerifiedAt: true,
+        signupPlatform: true,
+      },
     });
     if (!user) throw new NotFoundException('User not found');
     if (user.emailVerifiedAt) {
@@ -586,7 +606,12 @@ export class AuthService {
       where: { userId, usedAt: null },
     });
 
-    await this.sendEmailVerification(user.id, user.email, user.name);
+    await this.sendEmailVerification(
+      user.id,
+      user.email,
+      user.name,
+      user.signupPlatform,
+    );
     return { success: true };
   }
 
@@ -605,6 +630,7 @@ export class AuthService {
         name: true,
         emailVerifiedAt: true,
         deletedAt: true,
+        signupPlatform: true,
       },
     });
 
@@ -617,7 +643,12 @@ export class AuthService {
       where: { userId: user.id, usedAt: null },
     });
 
-    await this.sendEmailVerification(user.id, user.email, user.name);
+    await this.sendEmailVerification(
+      user.id,
+      user.email,
+      user.name,
+      user.signupPlatform,
+    );
     return { success: true };
   }
 
@@ -625,6 +656,7 @@ export class AuthService {
     userId: string,
     email: string,
     name: string,
+    signupPlatform?: string | null,
   ) {
     const rawToken = this.generateOpaqueToken();
     const tokenHash = this.hashToken(rawToken);
@@ -636,7 +668,14 @@ export class AuthService {
 
     const frontendUrl =
       this.configService.get<string>('FRONTEND_URL') || 'http://localhost:5173';
-    const link = `${frontendUrl}/verify-email?token=${rawToken}`;
+    // The link always opens on the website (it's what's clickable from an
+    // email client), but a mobile signup should land back in the app once
+    // verified rather than the website's login page. Tag it so
+    // VerifyEmail.tsx knows which way to send the user afterwards.
+    const link =
+      signupPlatform === 'mobile'
+        ? `${frontendUrl}/verify-email?token=${rawToken}&platform=mobile`
+        : `${frontendUrl}/verify-email?token=${rawToken}`;
 
     this.mailService
       .sendEmail({
@@ -653,7 +692,23 @@ export class AuthService {
     const token = await this.prisma.emailVerificationToken.findUnique({
       where: { tokenHash },
     });
-    if (!token || token.usedAt || token.expiresAt < new Date()) {
+    if (!token || token.expiresAt < new Date()) {
+      throw new BadRequestException('Invalid or expired verification link');
+    }
+
+    if (token.usedAt) {
+      // Some corporate mail-security gateways and link scanners open a
+      // verification link server-side to prescan it before the person ever
+      // taps it themselves, silently burning a single-use token before the
+      // real click arrives. Rather than lock the actual user out with a
+      // false "invalid link" for an action that already succeeded, treat a
+      // reuse within a short grace window as a success (mirrors the
+      // refresh-token reuse grace window above). A reuse well outside that
+      // window is treated as genuinely stale, same as before.
+      const usedAgoMs = Date.now() - token.usedAt.getTime();
+      if (usedAgoMs <= this.verifyEmailReuseGraceMs) {
+        return { success: true };
+      }
       throw new BadRequestException('Invalid or expired verification link');
     }
 
