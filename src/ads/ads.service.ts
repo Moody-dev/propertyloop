@@ -117,6 +117,7 @@ export class AdsService {
   }
 
   async listMine(ownerUserId: string) {
+    await this.expireEnded(ownerUserId);
     const items = await this.prisma.brandAd.findMany({
       where: { ownerUserId },
       orderBy: { createdAt: 'desc' },
@@ -189,6 +190,8 @@ export class AdsService {
   async adminList(opts: { page: number; limit: number; status?: string }) {
     const { page, limit } = opts;
     const skip = (page - 1) * limit;
+
+    await this.expireEnded();
 
     const where: Prisma.BrandAdWhereInput = {};
     if (opts.status && opts.status in AdStatus) {
@@ -274,6 +277,25 @@ export class AdsService {
   }
 
   // ─── Helpers ──────────────────────────────────────────────────────────────
+
+  /**
+   * Lazily retire ads whose paid window has closed (ACTIVE → EXPIRED). This
+   * backend runs no scheduler, and serving already ignores ended ads (serve()
+   * gates on endAt), so the only thing left to keep honest is the status shown
+   * in the owner/admin lists — cheap to do at read time. PAUSED ads are left
+   * alone: an admin pulled them, so they haven't run their window out.
+   * Scoped to a single owner when given, otherwise sweeps the whole table.
+   */
+  private async expireEnded(ownerUserId?: string) {
+    await this.prisma.brandAd.updateMany({
+      where: {
+        status: AdStatus.ACTIVE,
+        endAt: { lt: new Date() },
+        ...(ownerUserId !== undefined && { ownerUserId }),
+      },
+      data: { status: AdStatus.EXPIRED },
+    });
+  }
 
   private async assertOwner(ownerUserId: string, adId: string) {
     const ad = await this.prisma.brandAd.findUnique({ where: { id: adId } });
