@@ -14,6 +14,7 @@ import {
   Prisma,
 } from '../../generated/prisma/client';
 import { CreateAdDto } from './dto/create-ad.dto';
+import { UpdateAdContentDto } from './dto/update-ad-content.dto';
 
 // Flat weekly rate per placement (naira). Single source of truth — the
 // amount is always computed server-side so a client can't price its own ad.
@@ -266,6 +267,38 @@ export class AdsService {
         }
         data = { status: AdStatus.ACTIVE, ...(adminNote !== undefined && { adminNote }) };
         break;
+    }
+
+    const updated = await this.prisma.brandAd.update({
+      where: { id: adId },
+      data,
+      include: { owner: { select: { id: true, name: true, email: true } } },
+    });
+    return this.serializeAdmin(updated);
+  }
+
+  /**
+   * Admin edit of a live ad's creative — a brand sending a better image or the
+   * body copy they never supplied shouldn't require cancelling and re-buying
+   * the slot. Only creative fields move; placement, window, money and status
+   * are untouched, so impressions and clicks carry straight through.
+   */
+  async adminUpdateContent(adId: string, dto: UpdateAdContentDto) {
+    const ad = await this.prisma.brandAd.findUnique({ where: { id: adId } });
+    if (!ad) throw new NotFoundException('Ad not found');
+
+    const data: Prisma.BrandAdUpdateInput = {
+      ...(dto.imageUrl !== undefined && { imageUrl: dto.imageUrl }),
+      ...(dto.headline !== undefined && { headline: dto.headline }),
+      // Empty string clears the body; null in the column means "no body".
+      ...(dto.body !== undefined && { body: dto.body === '' ? null : dto.body }),
+      ...(dto.ctaLabel !== undefined && { ctaLabel: dto.ctaLabel }),
+      ...(dto.ctaUrl !== undefined && { ctaUrl: dto.ctaUrl }),
+      ...(dto.adminNote !== undefined && { adminNote: dto.adminNote }),
+    };
+
+    if (Object.keys(data).length === 0) {
+      throw new BadRequestException('No fields to update');
     }
 
     const updated = await this.prisma.brandAd.update({

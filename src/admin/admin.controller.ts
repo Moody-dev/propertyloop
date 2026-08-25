@@ -42,6 +42,7 @@ import { VendorJobsService } from '../vendor-jobs/vendor-jobs.service';
 import { AddDisputeMessageDto } from '../vendor-jobs/dto/add-dispute-message.dto';
 import { ResolveDisputeDto } from '../vendor-jobs/dto/resolve-dispute.dto';
 import { AdsService } from '../ads/ads.service';
+import { UpdateAdContentDto } from '../ads/dto/update-ad-content.dto';
 import { PaymentsService } from '../payments/payments.service';
 
 function mapUserRoleToConversationRole(
@@ -560,6 +561,19 @@ export class AdminController {
       throw new NotFoundException('Unknown action');
     }
     return this.adsService.adminSetStatus(id, body.action, body.adminNote);
+  }
+
+  // Creative-only edit (image, copy, landing page). Keeps the ad's placement,
+  // window, payment and stats intact — a brand supplying better artwork
+  // mid-flight shouldn't mean cancelling and re-buying the slot.
+  @Patch('ads/:id')
+  async updateAdContent(
+    @CurrentUser() user: any,
+    @Param('id') id: string,
+    @Body() body: UpdateAdContentDto,
+  ) {
+    this.checkAdminAccess(user.role);
+    return this.adsService.adminUpdateContent(id, body);
   }
 
   // ─── Identity / KYC review ────────────────────────────────────────────────
