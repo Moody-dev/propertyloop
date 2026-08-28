@@ -113,7 +113,10 @@ export class VendorsService {
     const [items, total] = await Promise.all([
       this.prisma.user.findMany({
         where,
-        include: { vendorProfile: true },
+        include: {
+          vendorProfile: true,
+          vendorServices: VendorsService.CHEAPEST_SERVICE,
+        },
         orderBy,
         skip,
         take: limit,
@@ -140,7 +143,10 @@ export class VendorsService {
         isActive: true,
         deletedAt: null,
       },
-      include: { vendorProfile: true },
+      include: {
+        vendorProfile: true,
+        vendorServices: VendorsService.CHEAPEST_SERVICE,
+      },
     });
     if (!user || !user.vendorProfile) throw new NotFoundException('Vendor not found');
 
@@ -161,7 +167,11 @@ export class VendorsService {
   async getMe(userId: string) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      include: { vendorProfile: true, settings: true },
+      include: {
+        vendorProfile: true,
+        settings: true,
+        vendorServices: VendorsService.CHEAPEST_SERVICE,
+      },
     });
     if (!user || user.role !== Role.VENDOR || !user.vendorProfile) {
       throw new ForbiddenException('Vendor profile not found');
@@ -202,7 +212,11 @@ export class VendorsService {
           },
         },
       },
-      include: { vendorProfile: true, settings: true },
+      include: {
+        vendorProfile: true,
+        settings: true,
+        vendorServices: VendorsService.CHEAPEST_SERVICE,
+      },
     });
 
     return this.serializePrivate(updated);
@@ -724,6 +738,17 @@ export class VendorsService {
     };
   }
 
+  /**
+   * Cheapest active service, used to derive the vendor's headline price. Prisma
+   * batches this across a findMany, so it costs one extra query for a page of
+   * vendors rather than one per vendor.
+   */
+  private static readonly CHEAPEST_SERVICE = {
+    where: { active: true },
+    orderBy: { priceNaira: 'asc' },
+    take: 1,
+  } as const;
+
   private serializeBlackout(b: { id: string; date: Date; reason: string | null }) {
     return {
       id: b.id,
@@ -736,6 +761,12 @@ export class VendorsService {
 
   private serializePublic(user: any) {
     const p = user.vendorProfile;
+    // The posted service menu is the source of truth for what a buyer actually
+    // pays — VendorProfile.priceLabel is free text that drifts and can't be
+    // booked against. Derive the headline price from the cheapest active
+    // service and only fall back to the profile field when there is no menu,
+    // so the directory can't advertise a figure the profile contradicts.
+    const cheapest = user.vendorServices?.[0];
     return {
       id: user.id,
       name: user.name,
@@ -747,8 +778,10 @@ export class VendorsService {
       category: p?.serviceCategory ?? null,
       serviceArea: p?.serviceArea ?? null,
       yearsExperience: p?.yearsExperience ?? null,
-      priceLabel: p?.priceLabel ?? null,
-      priceNum: p?.priceNum ?? null,
+      priceLabel: cheapest
+        ? `From ₦${cheapest.priceNaira.toLocaleString('en-NG')}`
+        : (p?.priceLabel ?? null),
+      priceNum: cheapest ? cheapest.priceNaira : (p?.priceNum ?? null),
       bannerImage: p?.bannerImage ?? null,
       portfolioImages: p?.portfolioImages ?? [],
       availableForHire: p?.availableForHire ?? true,
