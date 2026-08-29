@@ -526,6 +526,31 @@ export class VendorsService {
     return services.map((s) => this.serializeService(s));
   }
 
+  /**
+   * Keep VendorProfile.priceNum equal to the cheapest active service.
+   *
+   * Reads derive the displayed price from the service menu directly, but the
+   * directory's `sort=price_asc` orders in the database and can't reach into a
+   * to-many relation — so without this the list would sort on a number with no
+   * relationship to the price it shows. Best-effort: a vendor whose sort key
+   * lags briefly is a far smaller problem than a failed service save.
+   */
+  private async syncHeadlinePrice(vendorUserId: string) {
+    try {
+      const cheapest = await this.prisma.vendorService.findFirst({
+        where: { vendorUserId, active: true },
+        orderBy: { priceNaira: 'asc' },
+        select: { priceNaira: true },
+      });
+      await this.prisma.vendorProfile.updateMany({
+        where: { userId: vendorUserId },
+        data: { priceNum: cheapest?.priceNaira ?? null },
+      });
+    } catch {
+      /* sort key only — never fail the caller's write over it */
+    }
+  }
+
   async createService(userId: string, dto: CreateVendorServiceDto) {
     const service = await this.prisma.vendorService.create({
       data: {
@@ -538,6 +563,7 @@ export class VendorsService {
         displayOrder: dto.displayOrder ?? 0,
       },
     });
+    await this.syncHeadlinePrice(userId);
     return this.serializeService(service);
   }
 
@@ -559,12 +585,14 @@ export class VendorsService {
         ...(dto.active !== undefined && { active: dto.active }),
       },
     });
+    await this.syncHeadlinePrice(userId);
     return this.serializeService(service);
   }
 
   async deleteService(userId: string, serviceId: string) {
     await this.assertOwnsService(userId, serviceId);
     await this.prisma.vendorService.delete({ where: { id: serviceId } });
+    await this.syncHeadlinePrice(userId);
     return { success: true };
   }
 
