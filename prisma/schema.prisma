@@ -147,6 +147,15 @@ enum EarningStatus {
   AVAILABLE
 }
 
+// A vendor's fee is paid out in two halves, so a job funds two earnings:
+// DEPOSIT is released when the vendor starts work, FINAL when the buyer
+// confirms completion. Jobs created before the split payout carry a single
+// FINAL earning worth the whole fee, which still releases on confirmation.
+enum EarningKind {
+  DEPOSIT
+  FINAL
+}
+
 enum OrderPaymentMethod {
   CARD
   TRANSFER
@@ -920,6 +929,14 @@ model VendorJob {
   platformFee   Int          @default(0) // 10% PropertyLoop commission, deducted from the vendor's cut
   paymentMethod String?
 
+  // The vendor fee is paid in two halves: depositAmount lands in their balance
+  // when they start work, finalAmount when the buyer confirms. Invariant:
+  // depositAmount + finalAmount = vendorFee. Jobs predating the split payout
+  // have depositAmount = 0 and finalAmount = vendorFee.
+  depositAmount     Int       @default(0)
+  finalAmount       Int       @default(0)
+  depositReleasedAt DateTime?
+
   // Completion & dispute
   completionProofImages String[]
   completionNotes       String?
@@ -977,12 +994,14 @@ model VendorEarning {
   id           String    @id @default(cuid())
   vendorUserId String
   vendor       User      @relation("VendorEarnings", fields: [vendorUserId], references: [id], onDelete: Cascade)
-  jobId        String    @unique
+  jobId        String
   job          VendorJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
 
   jobTitle   String
   clientName String
   amount     Int
+  // Which half of the fee this row represents. See EarningKind.
+  kind       EarningKind   @default(FINAL)
   status     EarningStatus @default(PENDING)
   paidAt     DateTime?
   createdAt  DateTime      @default(now())
@@ -992,7 +1011,10 @@ model VendorEarning {
   withdrawalRequestId String?
   withdrawalRequest   WithdrawalRequest? @relation(fields: [withdrawalRequestId], references: [id], onDelete: SetNull)
 
+  // One row per half, which keeps the release/refund upserts idempotent.
+  @@unique([jobId, kind])
   @@index([vendorUserId])
+  @@index([jobId])
   @@index([withdrawalRequestId])
 }
 

@@ -9,6 +9,7 @@ import { PaystackService } from './paystack.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationType } from '../notifications/notification-types';
 import {
+  EarningKind,
   EarningStatus,
   EscrowStatus,
   JobStatus,
@@ -194,18 +195,39 @@ export class PaymentsService {
 
       // Surface the money on the vendor's dashboard right away as "in escrow"
       // (PENDING) — it isn't theirs to withdraw yet, but they can see it coming.
+      // Both halves are created up front so the vendor can see the deposit that
+      // unlocks when they start, alongside the balance held until confirmation.
       await this.prisma.vendorEarning.upsert({
-        where: { jobId: job.id },
+        where: { jobId_kind: { jobId: job.id, kind: EarningKind.FINAL } },
         create: {
           vendorUserId: job.vendorUserId,
           jobId: job.id,
           jobTitle: job.title,
           clientName: job.clientName,
-          amount: job.vendorFee,
+          amount: job.finalAmount || job.vendorFee,
+          kind: EarningKind.FINAL,
           status: EarningStatus.PENDING,
         },
         update: {}, // already exists → leave its status as-is
       });
+
+      // Jobs predating the split payout have no deposit half; skip it entirely
+      // rather than parking a ₦0 row on their earnings screen.
+      if (job.depositAmount > 0) {
+        await this.prisma.vendorEarning.upsert({
+          where: { jobId_kind: { jobId: job.id, kind: EarningKind.DEPOSIT } },
+          create: {
+            vendorUserId: job.vendorUserId,
+            jobId: job.id,
+            jobTitle: job.title,
+            clientName: job.clientName,
+            amount: job.depositAmount,
+            kind: EarningKind.DEPOSIT,
+            status: EarningStatus.PENDING,
+          },
+          update: {},
+        });
+      }
 
       // Tell the vendor their money is secured so they can start — previously
       // they only found out by chance when opening the job tracker.
@@ -280,6 +302,11 @@ export class PaymentsService {
     // Wallet model: releasing escrow doesn't push money to the bank. It moves
     // the vendor fee into the vendor's in-app balance (AVAILABLE), which they
     // later withdraw themselves. No bank account is required at this step.
+    //
+    // Confirmation settles the final half. Any deposit still sitting PENDING is
+    // swept up too — a job can reach COMPLETED without ever passing through
+    // start() (see complete(), which accepts ACCEPTED jobs), and that deposit
+    // is owed either way once the buyer confirms.
     await this.prisma.$transaction([
       this.prisma.vendorJob.update({
         where: { id: jobId },
@@ -290,21 +317,78 @@ export class PaymentsService {
         },
       }),
       this.prisma.vendorEarning.upsert({
-        where: { jobId },
+        where: { jobId_kind: { jobId, kind: EarningKind.FINAL } },
         create: {
           vendorUserId: job.vendorUserId,
           jobId,
           jobTitle: job.title,
           clientName: job.clientName,
-          amount: job.vendorFee,
+          amount: job.finalAmount || job.vendorFee,
+          kind: EarningKind.FINAL,
+          status: EarningStatus.AVAILABLE,
+        },
+        update: { status: EarningStatus.AVAILABLE },
+      }),
+      this.prisma.vendorEarning.updateMany({
+        where: { jobId, kind: EarningKind.DEPOSIT, status: EarningStatus.PENDING },
+        data: { status: EarningStatus.AVAILABLE },
+      }),
+    ]);
+
+    console.log(
+      `Escrow RELEASED for job ${jobId} → vendor balance (AVAILABLE) ${job.finalAmount || job.vendorFee}`,
+    );
+  }
+
+  /**
+   * Releases the vendor's deposit half once they actually start work. Called
+   * from VendorJobsService.start(), which has already checked that escrow is
+   * LOCKED, so this only moves the deposit into their withdrawable balance and
+   * never touches the final half.
+   *
+   * Idempotent and silent on jobs with no deposit (created before the split
+   * payout), so start() can call it unconditionally.
+   */
+  async releaseDeposit(jobId: string): Promise<void> {
+    const job = await this.prisma.vendorJob.findUnique({ where: { id: jobId } });
+    if (!job) throw new NotFoundException('Job not found');
+    if (job.depositAmount <= 0 || job.depositReleasedAt) return;
+    if (job.escrowStatus !== EscrowStatus.LOCKED) {
+      throw new BadRequestException(
+        'Escrow must be funded before the deposit can be released',
+      );
+    }
+
+    await this.prisma.$transaction([
+      this.prisma.vendorJob.update({
+        where: { id: jobId },
+        data: { depositReleasedAt: new Date() },
+      }),
+      this.prisma.vendorEarning.upsert({
+        where: { jobId_kind: { jobId, kind: EarningKind.DEPOSIT } },
+        create: {
+          vendorUserId: job.vendorUserId,
+          jobId,
+          jobTitle: job.title,
+          clientName: job.clientName,
+          amount: job.depositAmount,
+          kind: EarningKind.DEPOSIT,
           status: EarningStatus.AVAILABLE,
         },
         update: { status: EarningStatus.AVAILABLE },
       }),
     ]);
 
+    void this.notifications.notify({
+      userId: job.vendorUserId,
+      type: NotificationType.JOB_DEPOSIT_RELEASED,
+      title: 'Deposit released',
+      body: `Your ₦${job.depositAmount.toLocaleString('en-NG')} deposit for "${job.title}" is in your balance. The rest follows when ${job.clientName} confirms the work.`,
+      data: { jobId },
+    });
+
     console.log(
-      `Escrow RELEASED for job ${jobId} → vendor balance (AVAILABLE) ${job.vendorFee}`,
+      `Deposit RELEASED for job ${jobId} → vendor balance (AVAILABLE) ${job.depositAmount}`,
     );
   }
 
@@ -509,23 +593,31 @@ export class PaymentsService {
     }
 
     try {
-      // Create VendorEarning to mark the payment as PAID
-      await this.prisma.vendorEarning.upsert({
+      // Mark the job's earnings as PAID. Both halves settle together here: an
+      // automated transfer covers whatever the vendor was owed on this job.
+      // (Transfers aren't enabled on our account, so this path is dormant —
+      // manual payouts settle through decideWithdrawal instead.)
+      const settled = await this.prisma.vendorEarning.updateMany({
         where: { jobId: job.id },
-        create: {
-          vendorUserId: job.vendorUserId,
-          jobId: job.id,
-          jobTitle: job.title,
-          clientName: job.clientName,
-          amount: job.vendorFee,
-          status: 'PAID',
-          paidAt: new Date(),
-        },
-        update: {
-          status: 'PAID',
-          paidAt: new Date(),
-        },
+        data: { status: 'PAID', paidAt: new Date() },
       });
+
+      if (settled.count === 0) {
+        // No earning was ever recorded for this job — create the final half so
+        // the transfer isn't silently lost from the vendor's history.
+        await this.prisma.vendorEarning.create({
+          data: {
+            vendorUserId: job.vendorUserId,
+            jobId: job.id,
+            jobTitle: job.title,
+            clientName: job.clientName,
+            amount: job.vendorFee,
+            kind: EarningKind.FINAL,
+            status: 'PAID',
+            paidAt: new Date(),
+          },
+        });
+      }
 
       // Close the loop for the vendor — the money actually reached their bank.
       void this.notifications.notify({
@@ -592,16 +684,22 @@ export class PaymentsService {
         },
       }),
       this.prisma.vendorEarning.upsert({
-        where: { jobId },
+        where: { jobId_kind: { jobId, kind: EarningKind.FINAL } },
         create: {
           vendorUserId: job.vendorUserId,
           jobId,
           jobTitle: job.title,
           clientName: job.clientName,
-          amount: job.vendorFee,
+          amount: job.finalAmount || job.vendorFee,
+          kind: EarningKind.FINAL,
           status: EarningStatus.AVAILABLE,
         },
         update: { status: EarningStatus.AVAILABLE },
+      }),
+      // Resolved for the vendor, so any deposit still held is theirs too.
+      this.prisma.vendorEarning.updateMany({
+        where: { jobId, kind: EarningKind.DEPOSIT, status: EarningStatus.PENDING },
+        data: { status: EarningStatus.AVAILABLE },
       }),
     ]);
 
@@ -622,9 +720,25 @@ export class PaymentsService {
     if (!job.escrowId)
       throw new BadRequestException('No escrow reference found');
 
+    // Only the money PropertyLoop still holds can go back. Once the vendor has
+    // started and taken their deposit, that half has left the platform, so a
+    // full refund would pay out money we no longer have. Refund the remainder
+    // — the buyer is made whole on everything except work already begun.
+    const releasedToVendor = job.depositReleasedAt ? job.depositAmount : 0;
+    const refundableNaira = Math.max(0, job.escrowAmount - releasedToVendor);
+
+    if (refundableNaira === 0) {
+      throw new BadRequestException(
+        'Nothing left to refund — the full amount has already been released to the vendor.',
+      );
+    }
+
     try {
-      // Call Paystack refund API
-      await this.paystackService.refundTransaction(job.escrowId);
+      // Partial refund when a deposit is already out, full refund otherwise.
+      await this.paystackService.refundTransaction(
+        job.escrowId,
+        refundableNaira * 100,
+      );
 
       await this.prisma.$transaction([
         this.prisma.vendorJob.update({
@@ -634,8 +748,10 @@ export class PaymentsService {
             refundedAt: new Date(),
           },
         }),
-        // Money went back to the buyer — drop the vendor's pending earning so
-        // it stops counting toward their "in escrow" balance.
+        // Money went back to the buyer — drop the vendor's pending earnings so
+        // they stop counting toward their "in escrow" balance. An already
+        // released deposit is deliberately left alone: it was excluded from the
+        // refund above, so the vendor keeps it and the books still balance.
         this.prisma.vendorEarning.deleteMany({
           where: { jobId, status: EarningStatus.PENDING },
         }),

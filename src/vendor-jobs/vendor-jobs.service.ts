@@ -71,6 +71,12 @@ export class VendorJobsService {
     const platformFee = Math.round(price * 0.1);
     const vendorFee = price - platformFee;
     const escrowAmount = price;
+    // The vendor's cut is paid in two halves — a deposit when they start work
+    // and the balance when the buyer confirms. An odd fee puts the extra naira
+    // in the final half, so the buyer's confirmation always releases at least
+    // as much as the deposit did.
+    const depositAmount = Math.floor(vendorFee / 2);
+    const finalAmount = vendorFee - depositAmount;
 
     const job = await this.prisma.vendorJob.create({
       data: {
@@ -87,6 +93,8 @@ export class VendorJobsService {
         vendorFee,
         platformFee,
         escrowAmount,
+        depositAmount,
+        finalAmount,
         escrowStatus: EscrowStatus.NONE, // Payment not yet initiated
         paymentMethod: dto.paymentMethod,
         scheduledFor: dto.scheduledFor,
@@ -246,10 +254,17 @@ export class VendorJobsService {
         "You can't start this job until the customer's payment is secured in escrow.",
       );
     }
-    return this.prisma.vendorJob.update({
+    const started = await this.prisma.vendorJob.update({
       where: { id: jobId },
       data: { status: JobStatus.IN_PROGRESS },
     });
+
+    // Starting work unlocks the vendor's deposit half. Escrow is LOCKED by the
+    // guard above, so this can't run on an unfunded job; it no-ops on jobs
+    // created before the split payout.
+    await this.paymentsService.releaseDeposit(jobId);
+
+    return started;
   }
 
   async complete(vendorUserId: string, jobId: string, dto: CompleteJobDto) {
@@ -281,7 +296,7 @@ export class VendorJobsService {
         userId: job.buyerUserId,
         type: NotificationType.JOB_COMPLETED,
         title: 'Service marked complete',
-        body: `${job.title} is done. Review and confirm to release ${nairaLabel(job.vendorFee)} from escrow.`,
+        body: `${job.title} is done. Review and confirm to release the remaining ${nairaLabel(job.finalAmount || job.vendorFee)} from escrow.`,
         data: { jobId },
       });
     }
@@ -313,7 +328,7 @@ export class VendorJobsService {
       userId: job.vendorUserId,
       type: NotificationType.JOB_CONFIRMED,
       title: 'Payment released',
-      body: `${job.clientName} confirmed ${job.title}. ${nairaLabel(job.vendorFee)} is now in your balance — withdraw anytime.`,
+      body: `${job.clientName} confirmed ${job.title}. The remaining ${nairaLabel(job.finalAmount || job.vendorFee)} is now in your balance — withdraw anytime.`,
       data: { jobId },
     });
 
@@ -681,6 +696,9 @@ export class VendorJobsService {
       vendorFee: job.vendorFee,
       platformFee: job.platformFee,
       escrowAmount: job.escrowAmount,
+      depositAmount: job.depositAmount,
+      finalAmount: job.finalAmount,
+      depositReleasedAt: job.depositReleasedAt,
       escrowId: job.escrowId,
       escrowStatus: job.escrowStatus,
       paymentMethod: job.paymentMethod,

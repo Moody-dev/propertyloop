@@ -17,6 +17,7 @@ export const NotificationType = {
   JOB_ACCEPTED: 'JOB_ACCEPTED',
   JOB_DECLINED: 'JOB_DECLINED',
   JOB_ESCROW_FUNDED: 'JOB_ESCROW_FUNDED', // → vendor. data: { jobId } — customer paid, escrow locked
+  JOB_DEPOSIT_RELEASED: 'JOB_DEPOSIT_RELEASED', // → vendor. data: { jobId } — half the fee unlocked on start
   JOB_STARTED: 'JOB_STARTED',
   JOB_COMPLETED: 'JOB_COMPLETED',
   JOB_CONFIRMED: 'JOB_CONFIRMED',

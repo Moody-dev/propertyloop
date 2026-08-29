@@ -130,11 +130,18 @@ export class PaystackService {
     return response.data.data;
   }
 
+  /**
+   * Refunds a transaction. Omitting `amountKobo` refunds it in full; passing a
+   * smaller amount issues a partial refund, which is how a disputed job with a
+   * deposit already paid out returns only the portion still held.
+   */
   async refundTransaction(
     transactionReference: string,
+    amountKobo?: number,
   ): Promise<{ refund_url?: string }> {
     const response = await this.axiosInstance.post('/refund', {
       transaction: transactionReference,
+      ...(amountKobo !== undefined && { amount: amountKobo }),
     });
     return response.data.data || {};
   }
