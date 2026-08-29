@@ -4,6 +4,7 @@ import { AdminService } from './admin.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ViewingsModule } from '../viewings/viewings.module';
 import { AppWaitlistModule } from '../app-waitlist/app-waitlist.module';
+import { PartialSignupsModule } from '../partial-signups/partial-signups.module';
 import { MessagesModule } from '../messages/messages.module';
 import { FeaturedPropertiesModule } from '../featured-properties/featured-properties.module';
 import { KycModule } from '../kyc/kyc.module';
@@ -15,6 +16,7 @@ import { PaymentsModule } from '../payments/payments.module';
   imports: [
     ViewingsModule,
     AppWaitlistModule,
+    PartialSignupsModule,
     MessagesModule,
     FeaturedPropertiesModule,
     KycModule,

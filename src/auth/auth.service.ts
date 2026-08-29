@@ -188,6 +188,16 @@ export class AuthService {
     // already hold it — new signups (waitlisted or not) start on FREE (3
     // listings) and pay to lift the cap. See agentProfile.create above.
 
+    // They abandoned the signup form at some point and we captured the email
+    // for follow-up — close that off now they've actually registered, so they
+    // don't get chased. Best-effort: bookkeeping must never fail a signup.
+    this.prisma.partialSignup
+      .updateMany({
+        where: { email: user.email, completedAt: null },
+        data: { completedAt: new Date() },
+      })
+      .catch((err) => console.error('Partial-signup close-off failed:', err));
+
     // Let the referrer know their link converted (in-app, best-effort — a
     // notification failure must never break the signup).
     if (referredById) {

@@ -30,6 +30,7 @@ import { UploadModule } from './upload/upload.module';
 import { ReportsModule } from './reports/reports.module';
 import { BlocksModule } from './blocks/blocks.module';
 import { AppWaitlistModule } from './app-waitlist/app-waitlist.module';
+import { PartialSignupsModule } from './partial-signups/partial-signups.module';
 import { ValuationsModule } from './valuations/valuations.module';
 import { FeaturedPropertiesModule } from './featured-properties/featured-properties.module';
 import { OffersModule } from './offers/offers.module';
@@ -73,6 +74,7 @@ import { AdsModule } from './ads/ads.module';
     ReportsModule,
     BlocksModule,
     AppWaitlistModule,
+    PartialSignupsModule,
     ValuationsModule,
     FeaturedPropertiesModule,
     OffersModule,

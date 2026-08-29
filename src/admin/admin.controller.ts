@@ -24,6 +24,7 @@ import { Response as ResDecorator } from '@nestjs/common';
 import { AdminService } from './admin.service';
 import { ViewingsService } from '../viewings/viewings.service';
 import { AppWaitlistService } from '../app-waitlist/app-waitlist.service';
+import { PartialSignupsService } from '../partial-signups/partial-signups.service';
 import { MessagesService } from '../messages/messages.service';
 import { ConversationParticipantRole } from '../../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
@@ -67,6 +68,7 @@ export class AdminController {
     private readonly adminService: AdminService,
     private readonly viewingsService: ViewingsService,
     private readonly appWaitlistService: AppWaitlistService,
+    private readonly partialSignupsService: PartialSignupsService,
     private readonly messagesService: MessagesService,
     private readonly prisma: PrismaService,
     private readonly featuredPropertiesService: FeaturedPropertiesService,
@@ -417,6 +419,51 @@ export class AdminController {
   ) {
     this.checkAdminAccess(user.role);
     return this.appWaitlistService.remove(id);
+  }
+
+  // ─── Abandoned signups (email captured before the account existed) ──────
+
+  @Get('partial-signups')
+  async listPartialSignups(
+    @CurrentUser() user: any,
+    @Query('page') page?: number,
+    @Query('limit') limit?: number,
+    @Query('search') search?: string,
+    @Query('pendingOnly') pendingOnly?: string,
+  ) {
+    this.checkAdminAccess(user.role);
+    return this.partialSignupsService.list({
+      page: page ? Number(page) : 1,
+      limit: limit ? Number(limit) : 100,
+      search,
+      // Default to the ones still worth chasing; pass pendingOnly=false to
+      // see rows that later converted.
+      pendingOnly: pendingOnly !== 'false',
+    });
+  }
+
+  @Get('partial-signups/export')
+  async exportPartialSignups(
+    @CurrentUser() user: any,
+    @ResDecorator() res: ExpressResponse,
+  ) {
+    this.checkAdminAccess(user.role);
+    const csv = await this.partialSignupsService.exportCsv();
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader(
+      'Content-Disposition',
+      'attachment; filename="abandoned-signups.csv"',
+    );
+    res.send(csv);
+  }
+
+  @Delete('partial-signups/:id')
+  async deletePartialSignup(
+    @CurrentUser() user: any,
+    @Param('id') id: string,
+  ) {
+    this.checkAdminAccess(user.role);
+    return this.partialSignupsService.remove(id);
   }
 
   // ─── Messaging — admin reaches out to a user ─────────────────────────────

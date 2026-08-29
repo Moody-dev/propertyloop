@@ -37,6 +37,28 @@ model AppWaitlistEntry {
   @@index([createdAt])
 }
 
+// Emails typed into the signup form by people who left before submitting.
+// Distinct from AppWaitlistEntry (a launch mailing list someone opted into)
+// and from User (no account exists yet). A password is never captured here.
+model PartialSignup {
+  id          String    @id @default(cuid())
+  email       String    @unique
+  name        String?
+  phone       String?
+  role        Role?
+  // Furthest point reached: "signup" on mobile (one screen), "role" |
+  // "signup" on the web wizard.
+  step        String?
+  // "web" | "mobile" — mirrors User.signupPlatform.
+  source      String?
+  // Set when this person eventually registers, so follow-up can skip them.
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([completedAt, createdAt])
+}
+
 model WaitlistEntry {
   id           String    @id @default(uuid())
   first_name   String
