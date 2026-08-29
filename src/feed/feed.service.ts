@@ -470,27 +470,64 @@ export class FeedService {
       .slice(0, 5)
       .map(([tag, count]) => ({ tag, count }));
 
-    // People to follow: most-followed active agents/vendors the viewer
-    // doesn't already follow (excluding themselves).
-    const suggestions = await this.prisma.user.findMany({
-      where: {
-        deletedAt: null,
-        isActive: true,
-        role: { in: ['AGENT', 'VENDOR'] },
-        ...(viewerId
-          ? {
-              id: { not: viewerId },
-              followers: { none: { followerId: viewerId } },
-            }
-          : {}),
-      },
-      select: {
-        ...authorSelect,
-        _count: { select: { followers: true } },
-      },
-      orderBy: [{ followers: { _count: 'desc' } }, { createdAt: 'desc' }],
-      take: 3,
-    });
+    // People to follow: the platform's most active agents and vendors that the
+    // viewer doesn't already follow.
+    //
+    // Ranked by activity, not by follower count. Follower counts sit at zero on
+    // a young feed, so ordering by them fell straight through to the createdAt
+    // tiebreak and suggested whoever had signed up most recently — the exact
+    // opposite of "top". Each role is ranked by the same signals the rest of
+    // the app already means by top: deals closed then listings for agents
+    // (matching AgentsService's default sort), jobs completed then rating for
+    // vendors. Followers stay on as a last tiebreak so the ordering improves
+    // by itself once the feed has traction.
+    const suggestionWhere = {
+      deletedAt: null,
+      isActive: true,
+      ...(viewerId
+        ? {
+            id: { not: viewerId },
+            followers: { none: { followerId: viewerId } },
+          }
+        : {}),
+    };
+    const suggestionSelect = {
+      ...authorSelect,
+      _count: { select: { followers: true } },
+    };
+
+    const [topAgents, topVendors] = await Promise.all([
+      this.prisma.user.findMany({
+        where: { ...suggestionWhere, role: 'AGENT' as const },
+        select: suggestionSelect,
+        orderBy: [
+          { agentProfile: { soldRentedCount: 'desc' } },
+          { agentProfile: { listingsCount: 'desc' } },
+          { agentProfile: { rating: 'desc' } },
+          { followers: { _count: 'desc' } },
+        ],
+        take: 4,
+      }),
+      this.prisma.user.findMany({
+        where: { ...suggestionWhere, role: 'VENDOR' as const },
+        select: suggestionSelect,
+        orderBy: [
+          { vendorProfile: { jobsCount: 'desc' } },
+          { vendorProfile: { rating: 'desc' } },
+          { followers: { _count: 'desc' } },
+        ],
+        take: 4,
+      }),
+    ]);
+
+    // Interleaved rather than concatenated: a run of busy agents would
+    // otherwise push every vendor off the end of the list.
+    const merged: typeof topAgents = [];
+    for (let i = 0; i < Math.max(topAgents.length, topVendors.length); i++) {
+      if (topAgents[i]) merged.push(topAgents[i]);
+      if (topVendors[i]) merged.push(topVendors[i]);
+    }
+    const suggestions = merged.slice(0, 6);
 
     return {
       roles: roleCounts.map((r) => ({ role: r.role, count: r._count._all })),
