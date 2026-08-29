@@ -1556,6 +1556,12 @@ model FeedPost {
   // Photo posts (R2 URLs, up to 4 rendered as a collage)
   images String[] @default([])
 
+  // Video posts (R2 URLs). Capped at one and mutually exclusive with images:
+  // a post is either a photo collage or a single clip, which keeps the card
+  // layout from having to reconcile both. No poster frame is generated, so
+  // the tile shows a play control over black until it's tapped.
+  videos String[] @default([])
+
   // Listing share — embeds one of the author's listings as a card
   listingId String?
   listing   Listing? @relation("FeedListingShares", fields: [listingId], references: [id], onDelete: SetNull)

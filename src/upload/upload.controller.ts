@@ -180,6 +180,36 @@ export class UploadController {
    * ("Network Error"), the same reason chat + listing uploads went presigned.
    * Guarded — only a signed-in user sets their own avatar.
    */
+  /**
+   * Presigned direct-to-R2 PUT for a feed post video.
+   *
+   * Presigned rather than multipart like /upload/feed-image: a 50MB clip
+   * proxied through Nest would hit the edge request timeout, which is the same
+   * reason listing videos, chat attachments and avatars all went presigned.
+   * The size is advisory (the client reports it) — the hard ceiling is the
+   * 100MB check in B2Service.uploadFile plus the bucket's own limits.
+   */
+  @UseGuards(JwtAuthGuard)
+  @Post('feed-video/presign')
+  async presignFeedVideo(
+    @Body() body: { filename?: string; contentType?: string; size?: number },
+  ) {
+    const contentType = body?.contentType ?? '';
+    if (!contentType.startsWith('video/')) {
+      throw new BadRequestException('File must be a video');
+    }
+    if (typeof body.size === 'number' && body.size > 50 * 1024 * 1024) {
+      throw new BadRequestException('Video must be 50MB or smaller');
+    }
+    const filename = body?.filename ?? `feed-video-${Date.now()}.mp4`;
+    const { uploadUrl, fileUrl } = await this.b2Service.getPresignedPutUrl({
+      folder: 'feed-videos',
+      filename,
+      contentType,
+    });
+    return { uploadUrl, fileUrl };
+  }
+
   @UseGuards(JwtAuthGuard)
   @Post('avatar/presign')
   async presignAvatar(

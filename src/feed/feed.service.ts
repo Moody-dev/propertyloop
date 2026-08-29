@@ -116,6 +116,7 @@ export class FeedService {
 
   async createPost(authorId: string, dto: CreateFeedPostDto) {
     const type = dto.type ?? FeedPostType.UPDATE;
+    const videos = (dto.videos ?? []).filter(Boolean).slice(0, 1);
 
     if (type === FeedPostType.POLL) {
       const options = (dto.pollOptions ?? [])
@@ -143,7 +144,9 @@ export class FeedService {
         authorId,
         type,
         body: dto.body.trim(),
-        images: dto.images ?? [],
+        // A clip wins: never store both, so the card has one thing to render.
+        images: videos.length > 0 ? [] : (dto.images ?? []),
+        videos,
         listingId: dto.listingId || null,
         insightMetric: dto.insightMetric || null,
         insightPeriod: dto.insightPeriod || null,
@@ -589,6 +592,7 @@ export class FeedService {
         type: p.type,
         body: p.body,
         images: p.images,
+        videos: p.videos,
         createdAt: p.createdAt,
         author: this.formatAuthor(p.author),
         listing: p.listing

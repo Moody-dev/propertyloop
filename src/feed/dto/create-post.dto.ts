@@ -28,6 +28,14 @@ export class CreateFeedPostDto {
   @IsOptional()
   images?: string[];
 
+  // One clip per post. Images and videos are mutually exclusive — createPost
+  // drops images when a video is present rather than rejecting the post.
+  @IsArray()
+  @IsString({ each: true })
+  @ArrayMaxSize(1)
+  @IsOptional()
+  videos?: string[];
+
   @IsString()
   @IsOptional()
   listingId?: string;
