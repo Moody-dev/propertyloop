@@ -68,15 +68,15 @@ export class MessagesService {
     // Blocking (either direction) removes the conversation from view
     // instantly — the blocker no longer wants to see it, and the blocked
     // party can no longer send into it anyway (App Store guideline 1.2).
-    const blockRows = await this.prisma.blockedUser.findMany({
-      where: { OR: [{ blockerId: userId }, { blockedId: userId }] },
-      select: { blockerId: true, blockedId: true },
-    });
-    const blockedOtherIds = blockRows.map((r) =>
-      r.blockerId === userId ? r.blockedId : r.blockerId,
-    );
+    const blockedOtherIds = await this.blockedCounterpartIds(userId);
     const where: Prisma.ConversationWhereInput = {
       id: { in: convoIds },
+      // A conversation row is created the moment someone opens a chat, before
+      // any message is sent (see createOrFind). Both sides were then listing
+      // that empty shell as "No messages yet" — so you appeared in someone's
+      // inbox purely because they tapped Message on your profile and backed
+      // out. Nothing to show until it actually carries a message.
+      messages: { some: {} },
       ...(blockedOtherIds.length > 0 && {
         participants: { none: { userId: { in: blockedOtherIds } } },
       }),
@@ -453,11 +453,33 @@ export class MessagesService {
   // ─── Get total unread count ──────────────────────────────────────────────
 
   async getUnreadCount(userId: string) {
+    // Must apply the same visibility rules as listConversations, or the badge
+    // counts a conversation the inbox hides — an unread the user can never
+    // clear because there is nothing to open.
+    const blockedOtherIds = await this.blockedCounterpartIds(userId);
+
     const result = await this.prisma.conversationParticipant.aggregate({
-      where: { userId },
+      where: {
+        userId,
+        conversation: {
+          messages: { some: {} },
+          ...(blockedOtherIds.length > 0 && {
+            participants: { none: { userId: { in: blockedOtherIds } } },
+          }),
+        },
+      },
       _sum: { unreadCount: true },
     });
     return { unread: result._sum.unreadCount ?? 0 };
+  }
+
+  /** Users on either side of a block with this user — hidden from their inbox. */
+  private async blockedCounterpartIds(userId: string): Promise<string[]> {
+    const rows = await this.prisma.blockedUser.findMany({
+      where: { OR: [{ blockerId: userId }, { blockedId: userId }] },
+      select: { blockerId: true, blockedId: true },
+    });
+    return rows.map((r) => (r.blockerId === userId ? r.blockedId : r.blockerId));
   }
 
   // ─── Helpers ──────────────────────────────────────────────────────────────
