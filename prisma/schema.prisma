@@ -953,7 +953,7 @@ model VendorJob {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  earning         VendorEarning?
+  earnings        VendorEarning[]
   reviews         VendorReview[]
   logbookEntry    LogbookEntry?
   disputeMessages JobDisputeMessage[]
