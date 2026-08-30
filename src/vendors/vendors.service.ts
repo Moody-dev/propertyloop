@@ -4,6 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { B2Service } from '../storage/b2.service';
 import { assertNotObjectionable } from '../common/content-filter';
 import {
   EarningStatus,
@@ -39,7 +40,10 @@ function toDateOnly(iso: string): Date {
 
 @Injectable()
 export class VendorsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly b2: B2Service,
+  ) {}
 
   // ─── Public directory ────────────────────────────────────────────────────
 
@@ -218,6 +222,18 @@ export class VendorsService {
         vendorServices: VendorsService.CHEAPEST_SERVICE,
       },
     });
+
+    // Portfolio and banner images are uploaded straight to R2 with a presigned
+    // URL, so uploadFile's HEIC conversion never sees them. Fire-and-forget:
+    // each object is rewritten under its own key, leaving stored URLs valid.
+    void this.b2
+      .normalizeHeicObjects([
+        updated.vendorProfile?.bannerImage,
+        ...(updated.vendorProfile?.portfolioImages ?? []),
+      ])
+      .catch((err) =>
+        console.warn('[vendors] HEIC normalize failed:', err?.message),
+      );
 
     return this.serializePrivate(updated);
   }

@@ -8,6 +8,7 @@ import {
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import * as crypto from 'crypto';
+import { isHeicBuffer, heicBufferToJpeg, jpegFilename } from '../media/heic';
 
 @Injectable()
 export class B2Service implements OnModuleInit {
@@ -80,10 +81,30 @@ export class B2Service implements OnModuleInit {
       );
     }
 
+    // iPhone photos arrive as HEIC, which only Safari can render. Convert
+    // before the bytes are stored so nothing unviewable ever lands in the
+    // bucket. Detection reads the magic bytes, not the name or mime type —
+    // iOS routinely presents a HEIC as "photo.jpg" with Content-Type
+    // image/jpeg, which is how unviewable images got stored in the first place.
+    let body: Buffer = file.buffer;
+    let contentType: string = file.mimetype;
+    let originalName: string = file.originalname;
+    if (isHeicBuffer(body)) {
+      try {
+        body = await heicBufferToJpeg(body);
+        contentType = 'image/jpeg';
+        originalName = jpegFilename(originalName);
+      } catch (err: any) {
+        throw new BadRequestException(
+          `Could not process this HEIC image: ${err.message || 'conversion failed'}`,
+        );
+      }
+    }
+
     // Generate unique filename
     const timestamp = Date.now();
     const random = crypto.randomBytes(4).toString('hex');
-    const ext = file.originalname.split('.').pop();
+    const ext = originalName.split('.').pop();
     const fileName = `${timestamp}-${random}.${ext}`;
     const fullPath = `${folderPath}/${fileName}`;
 
@@ -93,8 +114,8 @@ export class B2Service implements OnModuleInit {
         new PutObjectCommand({
           Bucket: this.bucketName,
           Key: fullPath,
-          Body: file.buffer,
-          ContentType: file.mimetype,
+          Body: body,
+          ContentType: contentType,
         }),
       );
 
@@ -190,6 +211,54 @@ export class B2Service implements OnModuleInit {
     }
     const bytes = await body.transformToByteArray();
     return { buffer: Buffer.from(bytes), contentType: res.ContentType };
+  }
+
+  /**
+   * Rewrites any HEIC objects among `urlsOrKeys` as JPEG, in place under the
+   * same key — so the caller's stored URLs keep working untouched.
+   *
+   * Presigned uploads (listing photos, vendor portfolios) go straight from the
+   * browser to R2, so uploadFile's conversion never sees them. Callers invoke
+   * this right after persisting the URLs to catch those.
+   *
+   * Best-effort by design: it is called fire-and-forget after a save that has
+   * already succeeded, so a failure here must never surface to the user. The
+   * backfill script re-runs the same conversion over anything missed.
+   */
+  async normalizeHeicObjects(urlsOrKeys: (string | null | undefined)[]): Promise<number> {
+    if (!this.s3Client || !this.bucketName) return 0;
+
+    const base = this.getPublicBaseUrl().replace(/\/$/, '');
+    const keys = (urlsOrKeys ?? [])
+      .filter((u): u is string => !!u)
+      .map((u) => {
+        const bare = u.split('?')[0];
+        return base && bare.startsWith(base + '/') ? bare.slice(base.length + 1) : bare;
+      })
+      // Only our own keys; anything absolute is someone else's host.
+      .filter((k) => k && !/^https?:\/\//i.test(k) && !k.includes('..'));
+
+    let converted = 0;
+    for (const key of keys) {
+      try {
+        const { buffer, contentType } = await this.getObjectBuffer(key);
+        if (!isHeicBuffer(buffer)) continue;
+        const jpeg = await heicBufferToJpeg(buffer);
+        await this.s3Client.send(
+          new PutObjectCommand({
+            Bucket: this.bucketName,
+            Key: key,
+            Body: jpeg,
+            ContentType: 'image/jpeg',
+          }),
+        );
+        converted++;
+        console.log(`Converted HEIC upload to JPEG: ${key}`);
+      } catch (err: any) {
+        console.warn(`HEIC normalize skipped for ${key}: ${err.message}`);
+      }
+    }
+    return converted;
   }
 
   async deleteFile(fileName: string): Promise<void> {

@@ -18,13 +18,32 @@ import { UpdateListingDto } from './dto/update-listing.dto';
 import { ListListingsDto } from './dto/list-listings.dto';
 import { AddListingDocumentDto } from './dto/add-document.dto';
 import { MediaUrlService } from '../media/media-url.service';
+import { B2Service } from '../storage/b2.service';
 
 @Injectable()
 export class ListingsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly mediaUrl: MediaUrlService,
+    private readonly b2: B2Service,
   ) {}
+
+  /**
+   * Listing photos are uploaded straight to R2 with a presigned URL, so the
+   * bytes never pass through B2Service.uploadFile and its HEIC conversion.
+   * Catch them here instead, once the listing is safely persisted.
+   *
+   * Fire-and-forget: the save has already succeeded and the object is rewritten
+   * under its own key, so the stored URLs stay valid either way. At worst an
+   * iPhone photo shows the fallback for the few seconds the decode takes.
+   */
+  private normalizeUploadedImages(listing: { coverImage?: string | null; images?: string[] }) {
+    void this.b2
+      .normalizeHeicObjects([listing.coverImage, ...(listing.images ?? [])])
+      .catch((err) =>
+        console.warn('[listings] HEIC normalize failed:', err?.message),
+      );
+  }
 
   // ─── Public listing & search ─────────────────────────────────────────────
 
@@ -247,6 +266,8 @@ export class ListingsService {
         );
       }
 
+      this.normalizeUploadedImages(listing);
+
       return this.serialize(listing);
     } catch (err: any) {
       // Surface as much detail as possible in Render logs. Keep the
@@ -355,6 +376,8 @@ export class ListingsService {
       data,
       include: { documents: true, agent: { include: { agentProfile: true } } },
     });
+    this.normalizeUploadedImages(updated);
+
     return this.serialize(updated);
   }
 
