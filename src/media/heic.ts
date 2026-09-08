@@ -40,6 +40,13 @@ const HEIF_BRANDS = new Set([
 ]);
 
 /**
+ * Leading bytes needed to identify the container. isHeicBuffer reads the first
+ * twelve; callers fetching over the network round up so one Range request is
+ * enough to sniff any object.
+ */
+export const HEIC_SNIFF_BYTES = 32;
+
+/**
  * Detects HEIC from the bytes rather than the filename or mime type, because
  * both lie: iOS browsers routinely present a HEIC as "photo.jpg" with
  * Content-Type image/jpeg, which is exactly how these got stored.

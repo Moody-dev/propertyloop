@@ -8,7 +8,12 @@ import {
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import * as crypto from 'crypto';
-import { isHeicBuffer, heicBufferToJpeg, jpegFilename } from '../media/heic';
+import {
+  isHeicBuffer,
+  heicBufferToJpeg,
+  jpegFilename,
+  HEIC_SNIFF_BYTES,
+} from '../media/heic';
 
 @Injectable()
 export class B2Service implements OnModuleInit {
@@ -193,15 +198,24 @@ export class B2Service implements OnModuleInit {
   /**
    * Read an object's raw bytes straight from R2 (server-side GetObject), used
    * by the watermark proxy. Returns the buffer plus its stored content-type.
+   *
+   * `rangeBytes` fetches only a leading slice (an HTTP Range request), which is
+   * how format sniffing avoids pulling whole multi-megabyte photos down just to
+   * read their first few bytes.
    */
   async getObjectBuffer(
     key: string,
+    rangeBytes?: number,
   ): Promise<{ buffer: Buffer; contentType?: string }> {
     if (!this.s3Client || !this.bucketName) {
       throw new BadRequestException('File storage service is not available.');
     }
     const res = await this.s3Client.send(
-      new GetObjectCommand({ Bucket: this.bucketName, Key: key }),
+      new GetObjectCommand({
+        Bucket: this.bucketName,
+        Key: key,
+        ...(rangeBytes && { Range: `bytes=0-${rangeBytes - 1}` }),
+      }),
     );
     const body = res.Body as
       | { transformToByteArray?: () => Promise<Uint8Array> }
@@ -238,11 +252,33 @@ export class B2Service implements OnModuleInit {
       // Only our own keys; anything absolute is someone else's host.
       .filter((k) => k && !/^https?:\/\//i.test(k) && !k.includes('..'));
 
+    // Sniff the container from a 32-byte Range request rather than downloading
+    // each object in full. Almost every upload is already a JPEG, so pulling
+    // whole photos down to read twelve bytes moved megabytes per listing save
+    // to decide, nearly always, that there was nothing to do. The sniffs are
+    // cheap enough to run together.
+    const sniffs = await Promise.all(
+      keys.map(async (key) => {
+        try {
+          const { buffer } = await this.getObjectBuffer(key, HEIC_SNIFF_BYTES);
+          return isHeicBuffer(buffer) ? key : null;
+        } catch (err: any) {
+          console.warn(`HEIC sniff skipped for ${key}: ${err.message}`);
+          return null;
+        }
+      }),
+    );
+    const heicKeys = sniffs.filter((k): k is string => k !== null);
+    if (heicKeys.length === 0) return 0;
+
+    // Conversions run one at a time on purpose. Decoding a 12MP HEIC holds the
+    // raw bitmap in memory — roughly 36MB before sharp re-encodes it — so a
+    // gallery uploaded entirely from an iPhone would otherwise decode every
+    // photo at once and could exhaust the container.
     let converted = 0;
-    for (const key of keys) {
+    for (const key of heicKeys) {
       try {
-        const { buffer, contentType } = await this.getObjectBuffer(key);
-        if (!isHeicBuffer(buffer)) continue;
+        const { buffer } = await this.getObjectBuffer(key);
         const jpeg = await heicBufferToJpeg(buffer);
         await this.s3Client.send(
           new PutObjectCommand({
