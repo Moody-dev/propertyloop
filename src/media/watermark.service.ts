@@ -27,6 +27,7 @@ const WM = {
   tileWidthMul: 1.5,
   tileHeightMul: 2.6,
   jpegQuality: 82,
+  webpQuality: 78,
 } as const;
 
 @Injectable()
@@ -40,35 +41,56 @@ export class WatermarkService {
   async apply(
     input: Buffer,
     fallbackContentType?: string,
+    opts: { width?: number; webp?: boolean } = {},
   ): Promise<{ buffer: Buffer; contentType: string }> {
     try {
       const img = sharp(input, { failOn: 'none', animated: false });
       const meta = await img.metadata();
-      const width = meta.width ?? 0;
-      const height = meta.height ?? 0;
-      if (!width || !height) {
+      const srcWidth = meta.width ?? 0;
+      const srcHeight = meta.height ?? 0;
+      if (!srcWidth || !srcHeight) {
         return { buffer: input, contentType: fallbackContentType ?? 'image/jpeg' };
       }
 
-      const overlay = Buffer.from(this.buildSvg(width, height));
-      let pipeline = sharp(input, { failOn: 'none', animated: false }).composite([
-        { input: overlay, top: 0, left: 0 },
-      ]);
+      // Never upscale — a request for a width larger than the original serves
+      // the original size rather than inventing pixels.
+      const width =
+        opts.width && opts.width < srcWidth ? opts.width : srcWidth;
+      const height = Math.round(srcHeight * (width / srcWidth));
 
-      // Re-encode to the original format where we can; default to JPEG.
+      // Resize before compositing so one decode does both, and the watermark
+      // scales with the delivered image rather than the original.
+      let pipeline = sharp(input, { failOn: 'none', animated: false });
+      if (width !== srcWidth) {
+        // Both dimensions are given explicitly so the output matches the
+        // overlay exactly; height is the aspect-correct value rounded, so the
+        // fill fit distorts by less than a pixel.
+        pipeline = pipeline.resize({ width, height, fit: 'fill' });
+      }
+
+      const overlay = Buffer.from(this.buildSvg(width, height));
+      pipeline = pipeline.composite([{ input: overlay, top: 0, left: 0 }]);
+
+      // Prefer WebP when the client accepts it; otherwise keep the original
+      // format where we can and default to JPEG.
       let contentType: string;
-      switch (meta.format) {
-        case 'png':
-          pipeline = pipeline.png();
-          contentType = 'image/png';
-          break;
-        case 'webp':
-          pipeline = pipeline.webp();
-          contentType = 'image/webp';
-          break;
-        default:
-          pipeline = pipeline.jpeg({ quality: WM.jpegQuality, mozjpeg: true });
-          contentType = 'image/jpeg';
+      if (opts.webp) {
+        pipeline = pipeline.webp({ quality: WM.webpQuality });
+        contentType = 'image/webp';
+      } else {
+        switch (meta.format) {
+          case 'png':
+            pipeline = pipeline.png();
+            contentType = 'image/png';
+            break;
+          case 'webp':
+            pipeline = pipeline.webp({ quality: WM.webpQuality });
+            contentType = 'image/webp';
+            break;
+          default:
+            pipeline = pipeline.jpeg({ quality: WM.jpegQuality, mozjpeg: true });
+            contentType = 'image/jpeg';
+        }
       }
 
       const buffer = await pipeline.toBuffer();
