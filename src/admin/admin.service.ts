@@ -310,6 +310,11 @@ export class AdminService {
     const listing = await this.prisma.listing.create({
       data: {
         agentId: dto.agentId,
+        // Who brought it in, as distinct from who owns it. This is the field
+        // that makes each staff member's acquisition figure a fact rather
+        // than a claim.
+        sourcedByStaffId: dto.sourcedByStaffId ?? null,
+        fromDealId: dto.fromDealId ?? null,
         title: dto.title,
         slug,
         type: dto.type,

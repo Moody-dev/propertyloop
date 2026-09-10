@@ -10,6 +10,10 @@ import { CreateListingDto } from './create-listing.dto';
  *    so the owner can't be taken from the authenticated user).
  *  - `status`: admins create listings on behalf of agents and can publish them
  *    directly or queue them for review, instead of the agent default.
+ *  - `sourcedByStaffId`: which staff member brought the listing in. agentId
+ *    records who OWNS it, which is a different question — without this,
+ *    "Ola listed 14 properties this month" cannot be answered from the
+ *    database at all.
  */
 export class AdminCreateListingDto extends CreateListingDto {
   @IsString()
@@ -19,4 +23,14 @@ export class AdminCreateListingDto extends CreateListingDto {
   @IsEnum(ListingStatus)
   @IsOptional()
   status?: ListingStatus;
+
+  /** The StaffProfile id of whoever sourced this listing. */
+  @IsString()
+  @IsOptional()
+  sourcedByStaffId?: string;
+
+  /** The mandate this property arrived through, if any. */
+  @IsString()
+  @IsOptional()
+  fromDealId?: string;
 }

@@ -369,6 +369,10 @@ model User {
   following     UserFollow[]   @relation("Following")
   followers     UserFollow[]   @relation("Followers")
 
+  // Team portal. Present only for PropertyLoop staff — this record, not the
+  // Role enum, is what makes somebody staff.
+  staffProfile StaffProfile? @relation("StaffProfile")
+
   @@index([role])
 }
 
@@ -718,6 +722,21 @@ model Listing {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  // ─── Team portal attribution ───────────────────────────────────────────
+  // agentId is who OWNS the listing. Neither of these existed before, so
+  // "Ola listed 14 properties this month" could not be answered from the
+  // database at all — it was a claim, not a fact.
+
+  /// The staff member who brought this listing in.
+  sourcedByStaffId String?
+  sourcedByStaff   StaffProfile? @relation("ListingSourcedBy", fields: [sourcedByStaffId], references: [id], onDelete: SetNull)
+
+  /// The mandate this property arrived through, if any.
+  fromDealId String?
+  fromDeal   Deal?   @relation("ListingFromDeal", fields: [fromDealId], references: [id], onDelete: SetNull)
+
+  shoots Shoot[] @relation("ListingShoots")
+
   documents         ListingDocument[]
   bookmarkedBy      Bookmark[]        @relation("ListingBookmarks")
   leads             Lead[]
@@ -734,6 +753,8 @@ model Listing {
   @@index([type])
   @@index([location])
   @@index([status])
+  @@index([sourcedByStaffId])
+  @@index([fromDealId])
 }
 
 model ListingDocument {
@@ -800,6 +821,17 @@ model Bookmark {
   @@index([userId])
 }
 
+enum ConversationKind {
+  /// Buyer↔agent, buyer↔vendor — everything the marketplace already had.
+  CUSTOMER
+  /// Staff one-to-one.
+  STAFF_DIRECT
+  /// The all-staff group.
+  STAFF_GROUP
+  /// Staff discussion pinned to a record (listing, deal, lead, shoot).
+  STAFF_THREAD
+}
+
 model Conversation {
   id String @id @default(cuid())
 
@@ -807,11 +839,39 @@ model Conversation {
   listingId String?
   productId String?
 
+  // ─── Team portal ───────────────────────────────────────────────────────
+  // MessagesService.listConversations returns every conversation a user
+  // participates in. Without this flag a staff member who is also an agent
+  // would see internal threads sitting in their customer inbox, so the
+  // listing query filters on it and every staff-side query requires it.
+  isInternal Boolean          @default(false)
+  kind       ConversationKind @default(CUSTOMER)
+  /// Set for STAFF_GROUP and STAFF_THREAD; a direct chat is named by whoever
+  /// is in it.
+  title      String?
+
+  /// Record a STAFF_THREAD is pinned to. listingId above doubles as the
+  /// property link, so only the three the marketplace lacked are added here.
+  dealId  String?
+  deal    Deal?   @relation("DealThreads", fields: [dealId], references: [id], onDelete: Cascade)
+  leadId  String?
+  lead    Lead?   @relation("LeadThreads", fields: [leadId], references: [id], onDelete: Cascade)
+  shootId String?
+  shoot   Shoot?  @relation("ShootThreads", fields: [shootId], references: [id], onDelete: Cascade)
+
+  /// Threads get resolved; customer conversations do not.
+  resolvedAt DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   participants ConversationParticipant[]
   messages     Message[]
+
+  @@index([isInternal, kind])
+  @@index([dealId])
+  @@index([leadId])
+  @@index([shootId])
 }
 
 model ConversationParticipant {
@@ -1071,6 +1131,9 @@ model Lead {
   @@index([agentId])
   @@index([listingId])
   @@index([status])
+
+  // Team portal: staff discussion pinned to this lead.
+  conversations Conversation[] @relation("LeadThreads")
 }
 
 model Viewing {
@@ -1754,4 +1817,376 @@ model BrandAd {
   @@index([placement, status])
   @@index([ownerUserId])
   @@index([status])
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// TEAM PORTAL
+// ═══════════════════════════════════════════════════════════════════════════
+// Internal staff tooling for the September 2026 org structure. Everything
+// below is about how PropertyLoop runs itself — it is never exposed to
+// buyers, agents or vendors.
+//
+// Two rules shape these models:
+//
+// 1. Where the marketplace already owns a fact, the team portal points at it
+//    rather than copying it. A property's publish state stays Listing.status;
+//    there is no second "published" flag here that could disagree with the
+//    website.
+//
+// 2. Where nothing owns a fact — developers, mandates, shoots, daily logs —
+//    the model lives here, because there was previously nowhere to put it.
+
+enum StaffRole {
+  MD_CEO
+  GM
+  PROPERTY_LISTING
+  MARKETING
+  OPERATIONS
+  AMBASSADOR
+  SECRETARY
+}
+
+enum Chapter {
+  LAGOS
+  OSUN
+}
+
+/// Granular staff capabilities.
+///
+/// These exist because Role (BUYER | AGENT | VENDOR | ADMIN) has no staff
+/// concept, so the only way to give the team logins was to make everyone an
+/// ADMIN — which would hand a Secretary and a Video Presenter the power to
+/// approve withdrawals and read KYC identity documents. A StaffProfile
+/// carries an explicit grant list instead, checked by StaffPermissionsGuard.
+enum StaffPermission {
+  VIEW_REVENUE
+  VIEW_ALL_TARGETS
+  MANAGE_TARGETS
+  MANAGE_DEALS
+  MANAGE_PROPERTIES
+  PUBLISH_PROPERTY
+  VERIFY_DOCUMENTS
+  MANAGE_LEADS
+  QUALIFY_LEAD
+  MANAGE_CONTENT
+  HANDLE_OPS
+  REVIEW_KYC
+  APPROVE_WITHDRAWAL
+  RESOLVE_DISPUTE
+  VIEW_ALL_LOGS
+  MANAGE_STAFF
+}
+
+/// A member of staff.
+///
+/// Sits alongside User rather than replacing it: a staff member signs in with
+/// the same credentials as anyone else, and this record is what makes them
+/// staff. Never hard-deleted — the id is stamped on every property, deal,
+/// lead, log and message the person touched, so removing it would orphan all
+/// of that. `active = false` is what a vacant position looks like.
+model StaffProfile {
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation("StaffProfile", fields: [userId], references: [id], onDelete: Cascade)
+
+  /// "A"–"G", the letter used throughout the org document.
+  letter           String
+  staffRole        StaffRole
+  chapter          Chapter           @default(LAGOS)
+  /// Set for staff who also carry Osun chapter duties (Sodiq 1st).
+  secondaryChapter Chapter?
+  permissions      StaffPermission[]
+
+  reportsToId String?
+  reportsTo   StaffProfile?  @relation("StaffReports", fields: [reportsToId], references: [id], onDelete: SetNull)
+  reports     StaffProfile[] @relation("StaffReports")
+
+  active Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  sourcedListings Listing[]      @relation("ListingSourcedBy")
+  deals           Deal[]         @relation("DealOwner")
+  dailyLogs       DailyLog[]     @relation("StaffDailyLogs")
+  presentedShoots Shoot[]        @relation("ShootPresenter")
+  preppedShoots   Shoot[]        @relation("ShootSecretary")
+  contentPieces   ContentPiece[] @relation("ContentOwner")
+  targets         StaffTarget[]  @relation("StaffTargets")
+  opsTasks        OpsTask[]      @relation("OpsTaskAssignee")
+
+  @@index([staffRole])
+  @@index([chapter])
+  @@index([active])
+}
+
+// ─── Deals & mandates ──────────────────────────────────────────────────────
+// Developers, advertisers, facility-management and building-finishing clients
+// have no model anywhere else in the schema. This pipeline is the only record
+// of them, which is exactly why it belongs in the database rather than a
+// spreadsheet.
+
+enum DealStage {
+  IDENTIFIED
+  CONTACTED
+  PRESENTATION_SENT
+  MEETING
+  INVENTORY_RECEIVED
+  MANDATE_SIGNED
+  PUBLISHED
+  LOST
+}
+
+enum DealKind {
+  DEVELOPER
+  ADVERTISER
+  FACILITY_MANAGEMENT
+  BUILDING_FINISHING
+  REALTOR
+}
+
+enum MandateType {
+  EXCLUSIVE
+  PRIMARY
+  OPEN
+  NONE
+}
+
+model Deal {
+  id           String      @id @default(cuid())
+  company      String
+  contactName  String
+  contactPhone String?
+  kind         DealKind
+  stage        DealStage   @default(IDENTIFIED)
+  mandate      MandateType @default(NONE)
+
+  /// Expected commission or package value in whole naira. BigInt to match
+  /// Listing.priceNaira — a Banana Island mandate overflows int4.
+  valueNaira    BigInt @default(0)
+  expectedUnits Int    @default(0)
+
+  ownerId String
+  owner   StaffProfile @relation("DealOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  chapter Chapter      @default(LAGOS)
+
+  /// Set once the stage reaches MANDATE_SIGNED, so "mandates this month" is a
+  /// date range query rather than a guess from the current stage.
+  mandateSignedAt DateTime?
+
+  nextAction   String?
+  nextActionAt DateTime?
+  notes        String    @default("")
+
+  /// Bumped by every write. Drives the "stale — no activity in 7 days" flag.
+  lastActivityAt DateTime @default(now())
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  /// Properties that arrived through this relationship. What makes a mandate
+  /// measurable rather than asserted.
+  listings      Listing[]      @relation("ListingFromDeal")
+  conversations Conversation[] @relation("DealThreads")
+
+  @@index([stage])
+  @@index([ownerId])
+  @@index([chapter])
+  @@index([kind])
+  @@index([lastActivityAt])
+}
+
+// ─── Daily logs ────────────────────────────────────────────────────────────
+
+/// One entry per person per calendar day.
+///
+/// Read next to what the records already show for the same day (properties
+/// submitted, deals advanced, leads contacted), which is computed on the fly
+/// rather than stored — a written log on its own only measures how diligently
+/// somebody reports.
+model DailyLog {
+  id      String       @id @default(cuid())
+  staffId String
+  staff   StaffProfile @relation("StaffDailyLogs", fields: [staffId], references: [id], onDelete: Cascade)
+
+  /// Local calendar day in Africa/Lagos, stored as YYYY-MM-DD. A date-only
+  /// string rather than a DateTime on purpose: "which day was this logged
+  /// against" must not shift with the server's timezone.
+  day String
+
+  summary  String
+  blockers String @default("")
+  plan     String @default("")
+
+  submittedAt DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([staffId, day])
+  @@index([day])
+}
+
+// ─── Video production ──────────────────────────────────────────────────────
+
+enum ShootStage {
+  REQUESTED
+  SCHEDULED
+  PREPPED
+  FILMED
+  EDITING
+  PUBLISHED
+}
+
+model Shoot {
+  id       String  @id @default(cuid())
+  title    String
+  location String
+
+  listingId String?
+  listing   Listing? @relation("ListingShoots", fields: [listingId], references: [id], onDelete: SetNull)
+
+  stage        ShootStage @default(REQUESTED)
+  scheduledFor DateTime?
+  /// When prep was finished. The Secretary is measured on this landing at
+  /// least 24 hours before scheduledFor.
+  prepCompleteAt DateTime?
+
+  presenterId String
+  presenter   StaffProfile @relation("ShootPresenter", fields: [presenterId], references: [id], onDelete: Cascade)
+  secretaryId String
+  secretary   StaffProfile @relation("ShootSecretary", fields: [secretaryId], references: [id], onDelete: Cascade)
+
+  reshoot Boolean @default(false)
+  /// From the platform's own analytics, so it is null until somebody reads it.
+  /// Storing 0 would be a claim nobody has checked.
+  engagementRate Float?
+  publishedAt    DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  conversations Conversation[] @relation("ShootThreads")
+
+  @@index([stage])
+  @@index([presenterId])
+  @@index([scheduledFor])
+}
+
+enum ContentChannel {
+  INSTAGRAM
+  LINKEDIN
+  WHATSAPP
+  TIKTOK
+  X
+}
+
+enum ContentKind {
+  GRAPHIC
+  CAROUSEL
+  POST
+  VIDEO
+  CAMPAIGN
+}
+
+model ContentPiece {
+  id      String         @id @default(cuid())
+  title   String
+  channel ContentChannel
+  kind    ContentKind
+
+  publishedAt  DateTime?
+  scheduledFor DateTime?
+
+  /// Both null until read from the platform. See Shoot.engagementRate.
+  engagementRate  Float?
+  leadsGenerated  Int    @default(0)
+
+  ownerId String
+  owner   StaffProfile @relation("ContentOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([ownerId])
+  @@index([channel])
+  @@index([publishedAt])
+}
+
+// ─── Targets ───────────────────────────────────────────────────────────────
+
+enum TargetUnit {
+  COUNT
+  NAIRA
+  PERCENT
+}
+
+/// Where a target's actual figure comes from.
+///
+/// DATABASE means it is derived by a query and nobody can type it. MANUAL
+/// means somebody enters it from an external source. The distinction is
+/// surfaced in the UI on purpose: a scorecard made mostly of MANUAL rows
+/// measures diligence in reporting rather than results.
+enum TargetProvenance {
+  DATABASE
+  MANUAL
+}
+
+model StaffTarget {
+  id      String       @id @default(cuid())
+  staffId String
+  staff   StaffProfile @relation("StaffTargets", fields: [staffId], references: [id], onDelete: Cascade)
+
+  label String
+  /// Lower and upper bound of the monthly range from the org document.
+  min   Float
+  max   Float
+  /// Only meaningful when provenance is MANUAL — a DATABASE target's actual
+  /// is recomputed on read and this column is ignored.
+  actual Float @default(0)
+  unit   TargetUnit @default(COUNT)
+
+  /// True when the number is a limit to stay UNDER (reshoot rate, scheduling
+  /// conflicts) rather than a floor to reach. Progress inverts for these.
+  ceiling Boolean @default(false)
+
+  provenance TargetProvenance @default(MANUAL)
+  /// Names the derivation when provenance is DATABASE, e.g. "verifiedListings".
+  metricKey  String?
+
+  /// The month this target applies to, as YYYY-MM. Targets are monthly, and
+  /// last month's numbers must stay readable after the new month starts.
+  period String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([staffId, period, label])
+  @@index([period])
+}
+
+// ─── Operations tasks ──────────────────────────────────────────────────────
+
+/// An internal to-do the platform does not know about.
+///
+/// Deliberately the ONLY hand-creatable item in the operations queue. The
+/// other queues that queue renders — KYC review, withdrawal payout, reports,
+/// disputes, listing review — are projections of KycSubmission,
+/// WithdrawalRequest, Report and JobDisputeMessage. A hand-made row of those
+/// kinds would be a task with nothing behind it that somebody could mark
+/// resolved without any money moving or any document being checked.
+model OpsTask {
+  id      String  @id @default(cuid())
+  subject String
+  urgent  Boolean @default(false)
+
+  assigneeId String?
+  assignee   StaffProfile? @relation("OpsTaskAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+
+  resolved   Boolean   @default(false)
+  resolvedAt DateTime?
+
+  createdById String?
+  openedAt    DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([resolved])
+  @@index([assigneeId])
 }

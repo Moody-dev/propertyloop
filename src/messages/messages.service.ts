@@ -71,6 +71,11 @@ export class MessagesService {
     const blockedOtherIds = await this.blockedCounterpartIds(userId);
     const where: Prisma.ConversationWhereInput = {
       id: { in: convoIds },
+      // Internal staff conversations must never surface here. A staff member
+      // who is also an agent participates in both kinds, and without this
+      // filter their team threads would appear in the customer inbox
+      // alongside buyer enquiries.
+      isInternal: false,
       // A conversation row is created the moment someone opens a chat, before
       // any message is sent (see createOrFind). Both sides were then listing
       // that empty shell as "No messages yet" — so you appeared in someone's
@@ -462,6 +467,10 @@ export class MessagesService {
       where: {
         userId,
         conversation: {
+          // Same visibility rules as listConversations, internal threads
+          // included: a staff member's team unreads belong on the team
+          // portal's badge, not the customer inbox's.
+          isInternal: false,
           messages: { some: {} },
           ...(blockedOtherIds.length > 0 && {
             participants: { none: { userId: { in: blockedOtherIds } } },

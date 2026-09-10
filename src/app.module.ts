@@ -38,6 +38,14 @@ import { NotificationsModule } from './notifications/notifications.module';
 import { KycModule } from './kyc/kyc.module';
 import { FeedModule } from './feed/feed.module';
 import { AdsModule } from './ads/ads.module';
+// Team portal — internal staff tooling, never exposed to the marketplace.
+import { StaffModule } from './staff/staff.module';
+import { DealsModule } from './deals/deals.module';
+import { DailyLogsModule } from './daily-logs/daily-logs.module';
+import { ProductionModule } from './production/production.module';
+import { TargetsModule } from './targets/targets.module';
+import { OpsQueueModule } from './ops-queue/ops-queue.module';
+import { ThreadsModule } from './threads/threads.module';
 
 @Module({
   imports: [
@@ -82,6 +90,13 @@ import { AdsModule } from './ads/ads.module';
     KycModule,
     FeedModule,
     AdsModule,
+    StaffModule,
+    DealsModule,
+    DailyLogsModule,
+    ProductionModule,
+    TargetsModule,
+    OpsQueueModule,
+    ThreadsModule,
   ],
   controllers: [AppController],
   providers: [AppService, { provide: APP_GUARD, useClass: ThrottlerGuard }],
