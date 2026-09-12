@@ -111,6 +111,19 @@ enum Role {
   ADMIN
 }
 
+/// Who a listing actually belongs to.
+///
+/// Everything staff post from the team portal is HOUSE — PropertyLoop's own
+/// stock, secured through a mandate — and that is the inventory agent
+/// partners are given to sell. AGENT_OWN is a listing an individual agent
+/// brought and controls themselves. The distinction did not exist before:
+/// every listing simply had an agentId, so there was no way to ask "what is
+/// ours?" — which is the first question a partner programme has to answer.
+enum ListingOwnership {
+  AGENT_OWN
+  HOUSE
+}
+
 enum ListingType {
   SALE
   RENT
@@ -186,6 +199,8 @@ enum LeadSource {
   PHONE
   EMAIL
   REFERRAL
+  /// Introduced by an agent partner working house inventory.
+  PARTNER
   OTHER
 }
 
@@ -372,6 +387,9 @@ model User {
   // Team portal. Present only for PropertyLoop staff — this record, not the
   // Role enum, is what makes somebody staff.
   staffProfile StaffProfile? @relation("StaffProfile")
+  // Agent Partner Programme. Present for realtors who registered through
+  // /realtors/partners — they are ordinary AGENT users with this attached.
+  agentPartner AgentPartner? @relation("AgentPartner")
 
   @@index([role])
 }
@@ -731,11 +749,17 @@ model Listing {
   sourcedByStaffId String?
   sourcedByStaff   StaffProfile? @relation("ListingSourcedBy", fields: [sourcedByStaffId], references: [id], onDelete: SetNull)
 
+  /// AGENT_OWN unless staff posted it, in which case it is house stock that
+  /// partners may work. Set by the API from who is posting, never by the
+  /// client — an agent must not be able to label their own listing as ours.
+  ownership ListingOwnership @default(AGENT_OWN)
+
   /// The mandate this property arrived through, if any.
   fromDealId String?
   fromDeal   Deal?   @relation("ListingFromDeal", fields: [fromDealId], references: [id], onDelete: SetNull)
 
-  shoots Shoot[] @relation("ListingShoots")
+  shoots            Shoot[]             @relation("ListingShoots")
+  partnerCommissions PartnerCommission[] @relation("ListingPartnerCommissions")
 
   documents         ListingDocument[]
   bookmarkedBy      Bookmark[]        @relation("ListingBookmarks")
@@ -755,6 +779,7 @@ model Listing {
   @@index([status])
   @@index([sourcedByStaffId])
   @@index([fromDealId])
+  @@index([ownership])
 }
 
 model ListingDocument {
@@ -1119,6 +1144,12 @@ model Lead {
   phone   String
   message String?
 
+  // Team portal: the partner who introduced this buyer. What makes a
+  // commission attributable — without it, "I brought that buyer" is a claim
+  // somebody makes after the sale rather than a record made before it.
+  broughtByPartnerId String?
+  broughtByPartner   AgentPartner? @relation("PartnerLeads", fields: [broughtByPartnerId], references: [id], onDelete: SetNull)
+
   status      LeadStatus @default(NEW)
   source      LeadSource @default(LISTING_PAGE)
   // Free-text agent notes
@@ -1131,9 +1162,11 @@ model Lead {
   @@index([agentId])
   @@index([listingId])
   @@index([status])
+  @@index([broughtByPartnerId])
 
   // Team portal: staff discussion pinned to this lead.
-  conversations Conversation[] @relation("LeadThreads")
+  conversations     Conversation[]      @relation("LeadThreads")
+  partnerCommission PartnerCommission[] @relation("LeadPartnerCommission")
 }
 
 model Viewing {
@@ -1875,6 +1908,11 @@ enum StaffPermission {
   RESOLVE_DISPUTE
   VIEW_ALL_LOGS
   MANAGE_STAFF
+  /// Work the agent partner directory — verify, assign, chase.
+  MANAGE_PARTNERS
+  /// Sign off a partner commission for payment. Separate from recording the
+  /// sale on purpose: the person who logs it should not release it.
+  APPROVE_COMMISSION
 }
 
 /// A member of staff.
@@ -1914,6 +1952,8 @@ model StaffProfile {
   contentPieces   ContentPiece[] @relation("ContentOwner")
   targets         StaffTarget[]  @relation("StaffTargets")
   opsTasks        OpsTask[]      @relation("OpsTaskAssignee")
+  partnersOwned       AgentPartner[]      @relation("PartnerOwner")
+  commissionsApproved PartnerCommission[] @relation("CommissionApprover")
 
   @@index([staffRole])
   @@index([chapter])
@@ -2189,4 +2229,140 @@ model OpsTask {
 
   @@index([resolved])
   @@index([assigneeId])
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// AGENT PARTNER PROGRAMME
+// ═══════════════════════════════════════════════════════════════════════════
+// Realtors who register at /realtors/partners. A partner works WITH
+// PropertyLoop on commission rather than for it, which is what separates them
+// from StaffProfile.
+//
+// A partner is a real User with an AgentProfile, not a directory row. That is
+// forced by the schema rather than chosen: Listing.agentId is required, so
+// without an account a partner could never own or be credited on anything.
+
+enum PartnerStatus {
+  /// Registered, nobody has spoken to them yet.
+  NEW
+  CONTACTED
+  /// Identity and credentials checked — eligible for the public directory.
+  VERIFIED
+  /// Listing or selling.
+  ACTIVE
+  DORMANT
+  /// Failed verification. Kept, never deleted — we need the record of why.
+  REJECTED
+}
+
+enum PartnerExperience {
+  NEW
+  ONE_TO_THREE
+  THREE_PLUS
+}
+
+model AgentPartner {
+  id   String @id @default(cuid())
+  /// Human-readable partner number shown to them and used as a referral code.
+  code String @unique
+
+  userId String @unique
+  user   User   @relation("AgentPartner", fields: [userId], references: [id], onDelete: Cascade)
+
+  status         PartnerStatus      @default(NEW)
+  experience     PartnerExperience?
+  agencyName     String?
+  operatingState String?
+
+  /// Who referred them. Self-relation so a referral chain is a query rather
+  /// than a spreadsheet somebody maintains by hand.
+  referredById String?
+  referredBy   AgentPartner?  @relation("PartnerReferrals", fields: [referredById], references: [id], onDelete: SetNull)
+  referrals    AgentPartner[] @relation("PartnerReferrals")
+
+  /// The staff member handling them.
+  ownerStaffId String?
+  ownerStaff   StaffProfile? @relation("PartnerOwner", fields: [ownerStaffId], references: [id], onDelete: SetNull)
+
+  // ─── Payout details ────────────────────────────────────────────────────
+  // All optional. The registration form lets a partner skip this whole
+  // section, because asking a stranger for their NIN before they have agreed
+  // to anything loses most of them. "Registered" and "can be paid" are
+  // therefore genuinely different states, and the gap between them is what
+  // stalls a first commission.
+  passportPhotoUrl   String?
+  bankCode           String?
+  bankName           String?
+  accountNumber      String?
+  /// Resolved from Paystack, never typed — a mismatch surfaces at
+  /// registration instead of when a transfer bounces.
+  accountName        String?
+  nin                String?
+  tin                String?
+  /// Lagos State LIRS Payer ID for individuals; companies give a FIRS TIN.
+  payerId            String?
+  dateOfBirth        DateTime?
+  residentialAddress String?
+  residentialState   String?
+  /// CAC registration number, for partners registered as a company.
+  rcNumber           String?
+
+  registeredAt  DateTime  @default(now())
+  lastContactAt DateTime?
+  notes         String    @default("")
+  updatedAt     DateTime  @updatedAt
+
+  leads       Lead[]              @relation("PartnerLeads")
+  commissions PartnerCommission[] @relation("PartnerCommissions")
+
+  @@index([status])
+  @@index([ownerStaffId])
+  @@index([referredById])
+}
+
+enum PartnerCommissionStatus {
+  /// Sale recorded against the partner, not yet signed off.
+  PENDING
+  /// Approved, awaiting transfer.
+  APPROVED
+  PAID
+  REJECTED
+}
+
+/// Commission owed to a partner for a buyer they introduced.
+///
+/// Separate from VendorEarning: that settles a job through escrow, this is a
+/// share of a property sale. Kept as its own record so "what do we owe
+/// partners" is a query, not a reconstruction from leads and listings.
+model PartnerCommission {
+  id        String       @id @default(cuid())
+  partnerId String
+  partner   AgentPartner @relation("PartnerCommissions", fields: [partnerId], references: [id], onDelete: Cascade)
+
+  listingId String?
+  listing   Listing? @relation("ListingPartnerCommissions", fields: [listingId], references: [id], onDelete: SetNull)
+  /// The introduction this commission is for.
+  leadId    String?
+  lead      Lead?    @relation("LeadPartnerCommission", fields: [leadId], references: [id], onDelete: SetNull)
+
+  /// Naira. BigInt to match Listing.priceNaira.
+  saleValueNaira BigInt
+  ratePercent    Float
+  amountNaira    BigInt
+
+  status            PartnerCommissionStatus @default(PENDING)
+  /// Approval is a separate act from recording, and deliberately a separate
+  /// permission — the person who logs a sale should not sign off its payout.
+  approvedByStaffId String?
+  approvedBy        StaffProfile? @relation("CommissionApprover", fields: [approvedByStaffId], references: [id], onDelete: SetNull)
+  approvedAt        DateTime?
+  paidAt            DateTime?
+  note              String        @default("")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([partnerId])
+  @@index([status])
+  @@index([listingId])
 }

@@ -6,6 +6,7 @@ import {
 import { cleanDescription } from '../common/utils/sanitize';
 import { PrismaService } from '../prisma/prisma.service';
 import {
+  ListingOwnership,
   ListingStatus,
   Role,
   SubscriptionTier,
@@ -310,6 +311,11 @@ export class AdminService {
     const listing = await this.prisma.listing.create({
       data: {
         agentId: dto.agentId,
+        // Anything staff post from the team portal is PropertyLoop's own
+        // stock, which is the inventory agent partners are given to sell.
+        // Set here rather than accepted from the request — an agent must not
+        // be able to label their own listing as ours.
+        ownership: ListingOwnership.HOUSE,
         // Who brought it in, as distinct from who owns it. This is the field
         // that makes each staff member's acquisition figure a fact rather
         // than a claim.

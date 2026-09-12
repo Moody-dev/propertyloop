@@ -35,6 +35,7 @@ export const DEFAULT_STAFF_PERMISSIONS: Record<StaffRole, StaffPermission[]> = {
     StaffPermission.HANDLE_OPS,
     StaffPermission.RESOLVE_DISPUTE,
     StaffPermission.VIEW_ALL_LOGS,
+    StaffPermission.MANAGE_PARTNERS,
   ],
 
   // Ola and Sodiq (1st). Inventory quality is theirs end to end.
@@ -63,6 +64,9 @@ export const DEFAULT_STAFF_PERMISSIONS: Record<StaffRole, StaffPermission[]> = {
     StaffPermission.HANDLE_OPS,
     StaffPermission.REVIEW_KYC,
     StaffPermission.MANAGE_PROPERTIES,
+    // Onboarding a new realtor within 48 hours is Ngozi's stated target, so
+    // the directory has to be hers to work.
+    StaffPermission.MANAGE_PARTNERS,
   ],
 
   // On camera. Needs to see what is being shot and nothing else.

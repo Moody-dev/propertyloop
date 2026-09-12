@@ -38,6 +38,7 @@ import { NotificationsModule } from './notifications/notifications.module';
 import { KycModule } from './kyc/kyc.module';
 import { FeedModule } from './feed/feed.module';
 import { AdsModule } from './ads/ads.module';
+import { PartnersModule } from './partners/partners.module';
 // Team portal — internal staff tooling, never exposed to the marketplace.
 import { StaffModule } from './staff/staff.module';
 import { DealsModule } from './deals/deals.module';
@@ -90,6 +91,7 @@ import { ThreadsModule } from './threads/threads.module';
     KycModule,
     FeedModule,
     AdsModule,
+    PartnersModule,
     StaffModule,
     DealsModule,
     DailyLogsModule,
