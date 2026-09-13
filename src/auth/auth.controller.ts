@@ -87,7 +87,13 @@ export class AuthController {
     return this.attachRefreshCookie(res, result, req);
   }
 
-  @Throttle({ default: { ttl: 60000, limit: 10 } })
+  // Generous per IP so a whole office can sign in at once, tight per account
+  // so brute force is still stopped. The account limit is the one doing the
+  // security work; the IP limit is only there to blunt a flood.
+  @Throttle({
+    default: { ttl: 60000, limit: 60 },
+    account: { ttl: 60000, limit: 8 },
+  })
   @Post('login')
   @HttpCode(HttpStatus.OK)
   async login(

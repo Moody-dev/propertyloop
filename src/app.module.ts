@@ -51,12 +51,43 @@ import { ThreadsModule } from './threads/threads.module';
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
-    ThrottlerModule.forRoot([
-      {
-        ttl: 60000,
-        limit: 30,
-      },
-    ]),
+    ThrottlerModule.forRoot({
+      throttlers: [
+        // Per caller IP. The broad backstop for everything.
+        {
+          name: 'default',
+          ttl: 60000,
+          limit: 30,
+        },
+        // Per ACCOUNT being targeted, not per caller.
+        //
+        // An IP-only limit punishes the wrong people: a team behind one
+        // office NAT shares a single public address, so nine staff signing in
+        // at 9am exhaust the allowance and the last few are told their
+        // password is wrong. Meanwhile it barely inconveniences an attacker,
+        // who can rotate IPs freely.
+        //
+        // Brute force is aimed at an account, so that is what to count. This
+        // holds regardless of how many addresses the attempts come from.
+        {
+          name: 'account',
+          ttl: 60000,
+          limit: 8,
+          getTracker: (req: Record<string, any>) =>
+            Promise.resolve(
+              `account:${String(req?.body?.email ?? '')
+                .trim()
+                .toLowerCase()}`,
+            ),
+          // Only meaningful where the request names an account.
+          skipIf: (context) => {
+            const req = context.switchToHttp().getRequest();
+            const email = req?.body?.email;
+            return typeof email !== 'string' || email.trim() === '';
+          },
+        },
+      ],
+    }),
     PrismaModule,
     MailModule,
     StorageModule,
