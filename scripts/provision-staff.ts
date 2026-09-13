@@ -155,6 +155,34 @@ function readTextFile(path: string): string {
   return buf.toString('utf8');
 }
 
+/**
+ * A password derived from the person's name.
+ *
+ * Opt-in via --password-from-name. Predictable by design: it can be said
+ * down a phone and the MD can reissue without anyone hunting for the
+ * original printout.
+ *
+ * The cost is real. Anyone who knows a colleague's name and this pattern can
+ * guess their way in, and the portal reaches KYC documents and payout
+ * approval. Worth it for a nine-person team where the MD resets on request;
+ * not worth it for the MD's own account, which is why --random-for is there.
+ *
+ * Satisfies the API's rule of 8+ characters with upper, lower and a digit.
+ */
+function passwordFromName(name: string): string {
+  const parts = name
+    .trim()
+    .split(/\s+/)
+    .map((p) => p.replace(/[^A-Za-z0-9]/g, ''))
+    .filter(Boolean)
+    .map((p) => p.charAt(0).toUpperCase() + p.slice(1).toLowerCase());
+
+  const base = parts.join('.') || 'Staff';
+  const year = new Date().getFullYear();
+  // Short names would fall under the 8-character minimum on their own.
+  return base.length < 8 ? `${base}.Loop${year}` : `${base}${year}`;
+}
+
 function parseEnum<T extends object>(
   value: string | undefined,
   target: T,
@@ -259,6 +287,36 @@ async function main() {
       );
     });
 
+    // --password-from-name makes passwords memorable; --random-for keeps
+    // named accounts on a strong random one regardless.
+    const fromName = process.argv.includes('--password-from-name');
+    const randomForArg = process.argv.find((a) =>
+      a.startsWith('--random-for='),
+    );
+    const randomFor = new Set(
+      (randomForArg?.split('=').slice(1).join('=') ?? '')
+        .split(',')
+        .map((e) => e.trim().toLowerCase())
+        .filter(Boolean),
+    );
+
+    if (fromName) {
+      // Two people whose names reduce to the same string would share a
+      // password, which is the one thing "unique login details" must not do.
+      const derived = new Map<string, string>();
+      for (const r of roster) {
+        if (randomFor.has(r.email.trim().toLowerCase())) continue;
+        const pw = passwordFromName(r.name);
+        const clash = derived.get(pw);
+        if (clash) {
+          throw new Error(
+            `${r.name} and ${clash} would get the same password. Make their names differ, or use --random-for to give one of them a random password.`,
+          );
+        }
+        derived.set(pw, r.name);
+      }
+    }
+
     const results: {
       name: string;
       email: string;
@@ -280,7 +338,10 @@ async function main() {
         ? (entry.userRole.toUpperCase() as Role)
         : accountRole(staffRole);
 
-      const password = generatePassword();
+      const password =
+        fromName && !randomFor.has(email)
+          ? passwordFromName(entry.name)
+          : generatePassword();
       const passwordHash = await bcrypt.hash(password, 12);
 
       const existing = await prisma.user.findUnique({
