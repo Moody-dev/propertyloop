@@ -60,3 +60,8 @@ report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 
 # Generated waitlist invite URLs (contain signed tokens — keep out of git)
 scripts/output/
+
+# Staff roster for scripts/provision-staff.ts. Holds the team's real
+# names and email addresses — fill it in locally, never commit it.
+roster.json
+roster.*.json

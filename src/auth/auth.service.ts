@@ -237,6 +237,10 @@ export class AuthService {
         agentProfile: true,
         vendorProfile: true,
         settings: true,
+        // Team portal. Present only for PropertyLoop staff — this is what
+        // the portal gates on, not Role, so it has to arrive with the
+        // session rather than needing a second round trip on first paint.
+        staffProfile: true,
       },
     });
 
@@ -258,6 +262,10 @@ export class AuthService {
         agentProfile: true,
         vendorProfile: true,
         settings: true,
+        // Team portal. Present only for PropertyLoop staff — this is what
+        // the portal gates on, not Role, so it has to arrive with the
+        // session rather than needing a second round trip on first paint.
+        staffProfile: true,
       },
     });
     // Permanently closed accounts stay blocked, full stop. A merely-inactive
@@ -402,6 +410,10 @@ export class AuthService {
         agentProfile: true,
         vendorProfile: true,
         settings: true,
+        // Team portal. Present only for PropertyLoop staff — this is what
+        // the portal gates on, not Role, so it has to arrive with the
+        // session rather than needing a second round trip on first paint.
+        staffProfile: true,
       },
     });
 
@@ -783,6 +795,10 @@ export class AuthService {
         agentProfile: true,
         vendorProfile: true,
         settings: true,
+        // Team portal. Present only for PropertyLoop staff — this is what
+        // the portal gates on, not Role, so it has to arrive with the
+        // session rather than needing a second round trip on first paint.
+        staffProfile: true,
       },
     });
     if (!user) throw new NotFoundException('User not found');
@@ -915,6 +931,20 @@ export class AuthService {
       agentProfile: user.agentProfile,
       vendorProfile: user.vendorProfile,
       settings: user.settings,
+      // Null for everyone who is not staff. The portal checks this and the
+      // permissions on it; a deactivated profile is still returned so the
+      // client can say why access stopped rather than showing a blank gate.
+      staffProfile: user.staffProfile
+        ? {
+            id: user.staffProfile.id,
+            letter: user.staffProfile.letter,
+            staffRole: user.staffProfile.staffRole,
+            chapter: user.staffProfile.chapter,
+            secondaryChapter: user.staffProfile.secondaryChapter,
+            permissions: user.staffProfile.permissions,
+            active: user.staffProfile.active,
+          }
+        : null,
     };
   }
 
