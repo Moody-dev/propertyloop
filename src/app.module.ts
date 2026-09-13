@@ -40,6 +40,8 @@ import { FeedModule } from './feed/feed.module';
 import { AdsModule } from './ads/ads.module';
 import { PartnersModule } from './partners/partners.module';
 // Team portal — internal staff tooling, never exposed to the marketplace.
+import { StaffLeadsModule } from './staff-leads/staff-leads.module';
+import { StaffListingsModule } from './staff-listings/staff-listings.module';
 import { StaffModule } from './staff/staff.module';
 import { DealsModule } from './deals/deals.module';
 import { DailyLogsModule } from './daily-logs/daily-logs.module';
@@ -123,6 +125,10 @@ import { ThreadsModule } from './threads/threads.module';
     FeedModule,
     AdsModule,
     PartnersModule,
+    // Before StaffModule on purpose: /staff/:id would otherwise match
+    // /staff/leads and /staff/listings first.
+    StaffLeadsModule,
+    StaffListingsModule,
     StaffModule,
     DealsModule,
     DailyLogsModule,

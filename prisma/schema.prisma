@@ -30,7 +30,7 @@ enum UserType {
 model AppWaitlistEntry {
   id         String    @id @default(cuid())
   email      String    @unique
-  source     String?   // "homepage_cta", "footer", etc. — for future segmentation
+  source     String? // "homepage_cta", "footer", etc. — for future segmentation
   notifiedAt DateTime? // set when we eventually email them about the launch
   createdAt  DateTime  @default(now())
 
@@ -83,7 +83,7 @@ model FeaturedProperty {
   location     String
   priceNaira   BigInt
   priceLabel   String
-  type         String   // SALE | RENT | SHORTLET
+  type         String // SALE | RENT | SHORTLET
   propertyType String
   beds         Int      @default(0)
   baths        Int      @default(0)
@@ -306,9 +306,9 @@ model User {
   isActive        Boolean   @default(true)
 
   // Timestamps
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  deletedAt DateTime? // soft delete from Settings → Danger zone → Delete account (permanent)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime? // soft delete from Settings → Danger zone → Delete account (permanent)
   // Self-service pause from Settings → Danger zone → Deactivate account. Logs the
   // user out everywhere; logging back in with the correct password reactivates
   // (clears this) and proceeds normally. Distinct from isActive/admin suspension.
@@ -343,7 +343,7 @@ model User {
   vendorEarnings             VendorEarning[]           @relation("VendorEarnings")
   vendorReviews              VendorReview[]            @relation("VendorReviews")
   bookmarks                  Bookmark[]
-  vendorBookmarks            Bookmark[]               @relation("VendorBookmarks")
+  vendorBookmarks            Bookmark[]                @relation("VendorBookmarks")
   orders                     Order[]
   sentMessages               Message[]
   conversationsAsParticipant ConversationParticipant[]
@@ -432,12 +432,12 @@ model AgentProfile {
   verified        Boolean @default(false) // KYC via Smile Identity
 
   // Subscription
-  subscriptionTier              SubscriptionTier?
-  subscriptionStatus            SubscriptionStatus?
-  subscriptionRenewsAt          DateTime?
-  paystackSubscriptionCode      String?  // Paystack subscription code for the active sub
-  paystackCustomerCode          String?  // Paystack customer code
-  paystackEmailToken            String?  // Required alongside subscription_code to disable a sub via Paystack API
+  subscriptionTier         SubscriptionTier?
+  subscriptionStatus       SubscriptionStatus?
+  subscriptionRenewsAt     DateTime?
+  paystackSubscriptionCode String? // Paystack subscription code for the active sub
+  paystackCustomerCode     String? // Paystack customer code
+  paystackEmailToken       String? // Required alongside subscription_code to disable a sub via Paystack API
 
   subscriptionPayments SubscriptionPayment[]
 
@@ -527,9 +527,9 @@ model VendorProfile {
 }
 
 model VendorBankAccount {
-  id                    String @id @default(cuid())
-  vendorUserId          String @unique
-  vendor                User   @relation("VendorBankAccount", fields: [vendorUserId], references: [id], onDelete: Cascade)
+  id           String @id @default(cuid())
+  vendorUserId String @unique
+  vendor       User   @relation("VendorBankAccount", fields: [vendorUserId], references: [id], onDelete: Cascade)
 
   accountName           String
   accountNumber         String
@@ -582,16 +582,16 @@ model WithdrawalRequest {
 }
 
 model SubscriptionPayment {
-  id              String @id @default(cuid())
-  agentProfileId  String
-  agentProfile    AgentProfile @relation(fields: [agentProfileId], references: [id], onDelete: Cascade)
+  id             String       @id @default(cuid())
+  agentProfileId String
+  agentProfile   AgentProfile @relation(fields: [agentProfileId], references: [id], onDelete: Cascade)
 
-  tier            SubscriptionTier
-  amountKobo      Int
-  paystackRef     String   @unique  // Paystack transaction reference
+  tier               SubscriptionTier
+  amountKobo         Int
+  paystackRef        String           @unique // Paystack transaction reference
   billingPeriodStart DateTime
   billingPeriodEnd   DateTime
-  status          String   // "success" | "failed" | "pending"
+  status             String // "success" | "failed" | "pending"
 
   createdAt DateTime @default(now())
 
@@ -706,36 +706,36 @@ model Listing {
   agent   User   @relation("AgentListings", fields: [agentId], references: [id], onDelete: Cascade)
 
   // From Listing interface in src/data/listings.ts
-  title        String
-  slug         String      @unique
-  type         ListingType
-  propertyType String // "Flat / Apartment", "Detached House", etc.
-  priceNaira   BigInt // store as integer naira (BigInt — Banana Island can hit ₦5-10B which overflows int4)
-  priceLabel   String // "₦65,000,000" — keep frontend's formatted string for backwards compat
-  period       String? // "/year" for rentals, "/night" for shortlets
-  address      String
-  location     String // "Lekki, Lagos"
-  beds         Int
-  baths        Int
-  sqft         String // free-text, matches frontend ("2,400")
-  yearBuilt    String?
-  description  String
-  features     String[] // ["24hr Power", "Swimming Pool", ...]
-  coverImage   String
-  images       String[]
-  rating       Float         @default(0)
-  verified     Boolean       @default(false)
-  status       ListingStatus @default(PENDING_REVIEW)
-  viewsCount   Int           @default(0)
-  featured     Boolean       @default(false) // Pro "Featured placement" — top of search
-  openToOffers Boolean       @default(false) // "Accept offers" — buyers can submit offers
+  title          String
+  slug           String        @unique
+  type           ListingType
+  propertyType   String // "Flat / Apartment", "Detached House", etc.
+  priceNaira     BigInt // store as integer naira (BigInt — Banana Island can hit ₦5-10B which overflows int4)
+  priceLabel     String // "₦65,000,000" — keep frontend's formatted string for backwards compat
+  period         String? // "/year" for rentals, "/night" for shortlets
+  address        String
+  location       String // "Lekki, Lagos"
+  beds           Int
+  baths          Int
+  sqft           String // free-text, matches frontend ("2,400")
+  yearBuilt      String?
+  description    String
+  features       String[] // ["24hr Power", "Swimming Pool", ...]
+  coverImage     String
+  images         String[]
+  rating         Float         @default(0)
+  verified       Boolean       @default(false)
+  status         ListingStatus @default(PENDING_REVIEW)
+  viewsCount     Int           @default(0)
+  featured       Boolean       @default(false) // Pro "Featured placement" — top of search
+  openToOffers   Boolean       @default(false) // "Accept offers" — buyers can submit offers
   // Video tour fields (matches data/videos.ts VideoListing interface)
   virtualTourUrl String? // YouTube embed URL
   videoUrl       String? // Property video URL (upload or external)
   videoUrls      String[] // Multiple video URLs
   videoThumbnail String? // Thumbnail image for video card
   videoDuration  String? // e.g. "2:34"
-  videoViewCount Int     @default(0)
+  videoViewCount Int           @default(0)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -758,20 +758,29 @@ model Listing {
   fromDealId String?
   fromDeal   Deal?   @relation("ListingFromDeal", fields: [fromDealId], references: [id], onDelete: SetNull)
 
-  shoots            Shoot[]             @relation("ListingShoots")
+  shoots             Shoot[]             @relation("ListingShoots")
   partnerCommissions PartnerCommission[] @relation("ListingPartnerCommissions")
 
-  documents         ListingDocument[]
-  bookmarkedBy      Bookmark[]        @relation("ListingBookmarks")
-  leads             Lead[]
-  viewings          Viewing[]
-  shortletBookings  ShortletBooking[]
+  documents          ListingDocument[]
+  bookmarkedBy       Bookmark[]            @relation("ListingBookmarks")
+  leads              Lead[]
+  viewings           Viewing[]
+  shortletBookings   ShortletBooking[]
   rentalApplications RentalApplication[]
-  logbookEntries LogbookEntry[]
-  priceHistory   ListingPriceHistory[]
-  offers         Offer[]
-  purchases      PropertyPurchase[]
-  feedShares     FeedPost[]            @relation("FeedListingShares")
+  logbookEntries     LogbookEntry[]
+  priceHistory       ListingPriceHistory[]
+  offers             Offer[]
+  purchases          PropertyPurchase[]
+  feedShares         FeedPost[]            @relation("FeedListingShares")
+
+  /// Staff portal fields. A developer mandate arrives as a block of units,
+  /// not one property, and the count is what the pipeline is measured on.
+  units       Int       @default(1)
+  unitsSold   Int       @default(0)
+  /// Which chapter sourced it. Null on agent listings, which predate chapters.
+  chapter     Chapter?
+  /// When it went ACTIVE. status alone cannot answer "published this month".
+  publishedAt DateTime?
 
   @@index([agentId])
   @@index([type])
@@ -780,6 +789,7 @@ model Listing {
   @@index([sourcedByStaffId])
   @@index([fromDealId])
   @@index([ownership])
+  @@index([chapter])
 }
 
 model ListingDocument {
@@ -1032,8 +1042,8 @@ model VendorJob {
   refundedAt            DateTime?
 
   // Paystack integration
-  escrowPaidAt  DateTime? // when webhook confirms charge.success
-  transferCode  String?   // Paystack transfer code after release
+  escrowPaidAt DateTime? // when webhook confirms charge.success
+  transferCode String? // Paystack transfer code after release
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1117,7 +1127,7 @@ model VendorReview {
   jobTitle     String
   reply        String? // public reply from the vendor
   repliedAt    DateTime?
-  createdAt    DateTime @default(now())
+  createdAt    DateTime  @default(now())
 
   @@index([vendorUserId])
 }
@@ -1127,13 +1137,13 @@ model VendorReview {
 // ─────────────────────────────────────────────────────────────────────────────
 
 model Lead {
-  id        String @id @default(cuid())
+  id          String  @id @default(cuid())
   // Agent who owns the lead (the listing's agent)
-  agentId   String
-  agent     User   @relation("AgentLeads", fields: [agentId], references: [id], onDelete: Cascade)
+  agentId     String
+  agent       User    @relation("AgentLeads", fields: [agentId], references: [id], onDelete: Cascade)
   // Listing the lead is interested in
-  listingId String
-  listing   Listing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  listingId   String
+  listing     Listing @relation(fields: [listingId], references: [id], onDelete: Cascade)
   // Optional buyer user (null for guest enquiries)
   buyerUserId String?
   buyer       User?   @relation("BuyerLeads", fields: [buyerUserId], references: [id], onDelete: SetNull)
@@ -1159,22 +1169,38 @@ model Lead {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@index([agentId])
-  @@index([listingId])
-  @@index([status])
-  @@index([broughtByPartnerId])
+  /// Staff portal fields. The agent-facing columns above describe who OWNS
+  /// the listing; these describe who inside PropertyLoop is working the
+  /// enquiry, which is a different person and a different question.
+  ownerStaffId     String?
+  ownerStaff       StaffProfile? @relation("StaffOwnedLeads", fields: [ownerStaffId], references: [id], onDelete: SetNull)
+  /// Budget confirmed, timeline stated, property of interest named. One
+  /// explicit flag so Marketing and the GM read the same number.
+  qualified        Boolean       @default(false)
+  budgetNaira      BigInt?
+  /// First reply to the enquiry. Operations is measured on 30 minutes from
+  /// createdAt to here, so it is a timestamp rather than a stored duration —
+  /// a duration would need recomputing every time either end moved.
+  firstRespondedAt DateTime?
 
   // Team portal: staff discussion pinned to this lead.
   conversations     Conversation[]      @relation("LeadThreads")
   partnerCommission PartnerCommission[] @relation("LeadPartnerCommission")
+
+  @@index([agentId])
+  @@index([listingId])
+  @@index([status])
+  @@index([broughtByPartnerId])
+  @@index([ownerStaffId])
+  @@index([qualified])
 }
 
 model Viewing {
-  id        String @id @default(cuid())
-  agentId   String
-  agent     User   @relation("AgentViewings", fields: [agentId], references: [id], onDelete: Cascade)
-  listingId String
-  listing   Listing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  id          String  @id @default(cuid())
+  agentId     String
+  agent       User    @relation("AgentViewings", fields: [agentId], references: [id], onDelete: Cascade)
+  listingId   String
+  listing     Listing @relation(fields: [listingId], references: [id], onDelete: Cascade)
   buyerUserId String?
   buyer       User?   @relation("BuyerViewings", fields: [buyerUserId], references: [id], onDelete: SetNull)
 
@@ -1197,17 +1223,17 @@ model Viewing {
 }
 
 model AgentReview {
-  id String @id @default(cuid())
+  id             String  @id @default(cuid())
   // Agent being reviewed
-  agentUserId String
-  agent       User   @relation("AgentReviewsReceived", fields: [agentUserId], references: [id], onDelete: Cascade)
+  agentUserId    String
+  agent          User    @relation("AgentReviewsReceived", fields: [agentUserId], references: [id], onDelete: Cascade)
   // Reviewer (optional — guest reviews allowed)
   reviewerUserId String?
   reviewer       User?   @relation("AgentReviewsWritten", fields: [reviewerUserId], references: [id], onDelete: SetNull)
   // Snapshotted reviewer name
-  reviewerName String
+  reviewerName   String
 
-  rating  Int    // 1-5
+  rating  Int // 1-5
   comment String
 
   createdAt DateTime @default(now())
@@ -1250,16 +1276,16 @@ model BlogPost {
 // ─────────────────────────────────────────────────────────────────────────────
 
 model LogbookEntry {
-  id        String @id @default(cuid())
+  id          String     @id @default(cuid())
   // Property reference (nullable for vendor jobs not yet linked to a property)
-  listingId String?
-  listing   Listing? @relation(fields: [listingId], references: [id], onDelete: SetNull)
+  listingId   String?
+  listing     Listing?   @relation(fields: [listingId], references: [id], onDelete: SetNull)
   // Vendor job that generated this entry (auto-logged on escrow release)
-  jobId     String?  @unique
-  job       VendorJob? @relation(fields: [jobId], references: [id], onDelete: SetNull)
+  jobId       String?    @unique
+  job         VendorJob? @relation(fields: [jobId], references: [id], onDelete: SetNull)
   // Owner at time of entry
   ownerUserId String
-  owner       User @relation("LogbookOwner", fields: [ownerUserId], references: [id], onDelete: Cascade)
+  owner       User       @relation("LogbookOwner", fields: [ownerUserId], references: [id], onDelete: Cascade)
 
   // Entry details (snapshot from completed VendorJob)
   category    String // Plumbing, Electrical, etc.
@@ -1269,7 +1295,7 @@ model LogbookEntry {
   vendorId    String?
   cost        Int // naira
   completedAt DateTime
-  verified    Boolean @default(false) // true when confirmed via escrow
+  verified    Boolean  @default(false) // true when confirmed via escrow
 
   createdAt DateTime @default(now())
 
@@ -1282,9 +1308,9 @@ model LogbookEntry {
 // ─────────────────────────────────────────────────────────────────────────────
 
 model ListingPriceHistory {
-  id        String  @id @default(cuid())
+  id        String   @id @default(cuid())
   listingId String
-  listing   Listing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  listing   Listing  @relation(fields: [listingId], references: [id], onDelete: Cascade)
   oldPrice  BigInt
   newPrice  BigInt
   changedAt DateTime @default(now())
@@ -1297,12 +1323,12 @@ model ListingPriceHistory {
 // ─────────────────────────────────────────────────────────────────────────────
 
 model Partner {
-  id       String  @id @default(cuid())
-  name     String
-  logoUrl  String
-  website  String?
-  sortOrder Int    @default(0)
-  active   Boolean @default(true)
+  id        String   @id @default(cuid())
+  name      String
+  logoUrl   String
+  website   String?
+  sortOrder Int      @default(0)
+  active    Boolean  @default(true)
   createdAt DateTime @default(now())
 }
 
@@ -1311,7 +1337,7 @@ model Partner {
 // ─────────────────────────────────────────────────────────────────────────────
 
 model ShortletBooking {
-  id          String @id @default(cuid())
+  id          String  @id @default(cuid())
   listingId   String
   listing     Listing @relation(fields: [listingId], references: [id], onDelete: Cascade)
   buyerUserId String?
@@ -1331,8 +1357,8 @@ model ShortletBooking {
   total      Int
 
   paymentMethod String?
-  escrowId      String?              @unique
-  escrowStatus  EscrowStatus         @default(NONE)
+  escrowId      String?               @unique
+  escrowStatus  EscrowStatus          @default(NONE)
   status        ShortletBookingStatus @default(PENDING)
 
   createdAt DateTime @default(now())
@@ -1344,7 +1370,7 @@ model ShortletBooking {
 }
 
 model RentalApplication {
-  id          String @id @default(cuid())
+  id          String  @id @default(cuid())
   listingId   String
   listing     Listing @relation(fields: [listingId], references: [id], onDelete: Cascade)
   buyerUserId String?
@@ -1354,19 +1380,19 @@ model RentalApplication {
   applicantPhone String
   applicantEmail String?
 
-  deposit       Int // annual rent
-  agencyFee     Int // 10%
-  legalFee      Int
-  serviceFee    Int // 5%
-  total         Int
+  deposit    Int // annual rent
+  agencyFee  Int // 10%
+  legalFee   Int
+  serviceFee Int // 5%
+  total      Int
 
-  leaseDuration String   // "12 months"
+  leaseDuration String // "12 months"
   startDate     DateTime
 
   paymentMethod String?
-  escrowId      String?                  @unique
-  escrowStatus  EscrowStatus             @default(NONE)
-  status        RentalApplicationStatus  @default(PENDING)
+  escrowId      String?                 @unique
+  escrowStatus  EscrowStatus            @default(NONE)
+  status        RentalApplicationStatus @default(PENDING)
 
   signedAt  DateTime?
   createdAt DateTime  @default(now())
@@ -1382,16 +1408,16 @@ model RentalApplication {
 // ─────────────────────────────────────────────────────────────────────────────
 
 model Report {
-  id         String           @id @default(cuid())
+  id         String  @id @default(cuid())
   reporterId String?
-  reporter   User?            @relation("UserReports", fields: [reporterId], references: [id], onDelete: SetNull)
+  reporter   User?   @relation("UserReports", fields: [reporterId], references: [id], onDelete: SetNull)
 
   targetType ReportTargetType
   targetId   String
   reason     String
 
-  status     ReportStatus @default(PENDING)
-  adminNote  String?
+  status    ReportStatus @default(PENDING)
+  adminNote String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1809,9 +1835,9 @@ enum AdStatus {
 }
 
 model BrandAd {
-  id          String  @id @default(cuid())
+  id          String @id @default(cuid())
   ownerUserId String
-  owner       User    @relation("BrandAds", fields: [ownerUserId], references: [id], onDelete: Cascade)
+  owner       User   @relation("BrandAds", fields: [ownerUserId], references: [id], onDelete: Cascade)
 
   // Who the advertiser is
   brandName    String
@@ -1944,16 +1970,18 @@ model StaffProfile {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  sourcedListings Listing[]      @relation("ListingSourcedBy")
-  deals           Deal[]         @relation("DealOwner")
-  dailyLogs       DailyLog[]     @relation("StaffDailyLogs")
-  presentedShoots Shoot[]        @relation("ShootPresenter")
-  preppedShoots   Shoot[]        @relation("ShootSecretary")
-  contentPieces   ContentPiece[] @relation("ContentOwner")
-  targets         StaffTarget[]  @relation("StaffTargets")
-  opsTasks        OpsTask[]      @relation("OpsTaskAssignee")
+  sourcedListings     Listing[]           @relation("ListingSourcedBy")
+  deals               Deal[]              @relation("DealOwner")
+  dailyLogs           DailyLog[]          @relation("StaffDailyLogs")
+  presentedShoots     Shoot[]             @relation("ShootPresenter")
+  preppedShoots       Shoot[]             @relation("ShootSecretary")
+  contentPieces       ContentPiece[]      @relation("ContentOwner")
+  targets             StaffTarget[]       @relation("StaffTargets")
+  opsTasks            OpsTask[]           @relation("OpsTaskAssignee")
   partnersOwned       AgentPartner[]      @relation("PartnerOwner")
   commissionsApproved PartnerCommission[] @relation("CommissionApprover")
+
+  ownedLeads Lead[] @relation("StaffOwnedLeads")
 
   @@index([staffRole])
   @@index([chapter])
@@ -2076,15 +2104,15 @@ enum ShootStage {
 }
 
 model Shoot {
-  id       String  @id @default(cuid())
+  id       String @id @default(cuid())
   title    String
   location String
 
   listingId String?
   listing   Listing? @relation("ListingShoots", fields: [listingId], references: [id], onDelete: SetNull)
 
-  stage        ShootStage @default(REQUESTED)
-  scheduledFor DateTime?
+  stage          ShootStage @default(REQUESTED)
+  scheduledFor   DateTime?
   /// When prep was finished. The Secretary is measured on this landing at
   /// least 24 hours before scheduledFor.
   prepCompleteAt DateTime?
@@ -2094,7 +2122,7 @@ model Shoot {
   secretaryId String
   secretary   StaffProfile @relation("ShootSecretary", fields: [secretaryId], references: [id], onDelete: Cascade)
 
-  reshoot Boolean @default(false)
+  reshoot        Boolean   @default(false)
   /// From the platform's own analytics, so it is null until somebody reads it.
   /// Storing 0 would be a claim nobody has checked.
   engagementRate Float?
@@ -2136,8 +2164,8 @@ model ContentPiece {
   scheduledFor DateTime?
 
   /// Both null until read from the platform. See Shoot.engagementRate.
-  engagementRate  Float?
-  leadsGenerated  Int    @default(0)
+  engagementRate Float?
+  leadsGenerated Int    @default(0)
 
   ownerId String
   owner   StaffProfile @relation("ContentOwner", fields: [ownerId], references: [id], onDelete: Cascade)
@@ -2174,13 +2202,13 @@ model StaffTarget {
   staffId String
   staff   StaffProfile @relation("StaffTargets", fields: [staffId], references: [id], onDelete: Cascade)
 
-  label String
+  label  String
   /// Lower and upper bound of the monthly range from the org document.
-  min   Float
-  max   Float
+  min    Float
+  max    Float
   /// Only meaningful when provenance is MANUAL — a DATABASE target's actual
   /// is recomputed on read and this column is ignored.
-  actual Float @default(0)
+  actual Float      @default(0)
   unit   TargetUnit @default(COUNT)
 
   /// True when the number is a limit to stay UNDER (reshoot rate, scheduling
@@ -2354,10 +2382,10 @@ model PartnerCommission {
   /// Approval is a separate act from recording, and deliberately a separate
   /// permission — the person who logs a sale should not sign off its payout.
   approvedByStaffId String?
-  approvedBy        StaffProfile? @relation("CommissionApprover", fields: [approvedByStaffId], references: [id], onDelete: SetNull)
+  approvedBy        StaffProfile?           @relation("CommissionApprover", fields: [approvedByStaffId], references: [id], onDelete: SetNull)
   approvedAt        DateTime?
   paidAt            DateTime?
-  note              String        @default("")
+  note              String                  @default("")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
