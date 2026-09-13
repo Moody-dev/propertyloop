@@ -2,9 +2,13 @@
  * Provision login details for the whole team in one go.
  *
  * Usage:
- *   npx ts-node scripts/provision-staff.ts --template > roster.json
+ *   npx ts-node scripts/provision-staff.ts --template roster.json
  *   # fill in the names and emails, then:
  *   npx ts-node scripts/provision-staff.ts roster.json
+ *
+ * Pass the filename to --template rather than redirecting with `>`:
+ * PowerShell redirection writes UTF-16 with a BOM. The reader copes with it
+ * either way, but writing it directly avoids the surprise.
  *
  *   npx ts-node scripts/provision-staff.ts --list
  *
@@ -120,6 +124,37 @@ function generatePassword(): string {
   return `${block(5)}-${block(5)}-${block(4)}#`;
 }
 
+/**
+ * Read a text file whatever encoding the shell wrote it in.
+ *
+ * PowerShell's `>` produces UTF-16LE with a byte-order mark, which is not
+ * valid JSON and fails with an unreadable "Unexpected token" on the BOM. That
+ * is the default on Windows, so the roster arrives this way more often than
+ * not — the script decodes it rather than making somebody work out why their
+ * own file looks like mojibake.
+ */
+function readTextFile(path: string): string {
+  const buf = fs.readFileSync(path);
+  if (buf.length >= 2 && buf[0] === 0xff && buf[1] === 0xfe) {
+    return buf.subarray(2).toString('utf16le');
+  }
+  if (buf.length >= 2 && buf[0] === 0xfe && buf[1] === 0xff) {
+    // UTF-16BE: swap each pair, since Node only decodes LE.
+    const swapped = Buffer.from(buf.subarray(2));
+    swapped.swap16();
+    return swapped.toString('utf16le');
+  }
+  if (
+    buf.length >= 3 &&
+    buf[0] === 0xef &&
+    buf[1] === 0xbb &&
+    buf[2] === 0xbf
+  ) {
+    return buf.subarray(3).toString('utf8');
+  }
+  return buf.toString('utf8');
+}
+
 function parseEnum<T extends object>(
   value: string | undefined,
   target: T,
@@ -136,8 +171,20 @@ function parseEnum<T extends object>(
 }
 
 async function main() {
-  if (process.argv.includes('--template')) {
-    console.log(JSON.stringify(TEMPLATE, null, 2));
+  const templateFlag = process.argv.indexOf('--template');
+  if (templateFlag !== -1) {
+    const json = JSON.stringify(TEMPLATE, null, 2);
+    const target = process.argv[templateFlag + 1];
+    if (target && !target.startsWith('--')) {
+      // Written here rather than piped, so the shell cannot choose the
+      // encoding for us.
+      fs.writeFileSync(target, json, { encoding: 'utf8' });
+      console.log(`Wrote ${TEMPLATE.length} positions to ${target}`);
+      console.log('Fill in the names and emails, then run:');
+      console.log(`  npx ts-node scripts/provision-staff.ts ${target}`);
+    } else {
+      console.log(json);
+    }
     return;
   }
 
@@ -181,7 +228,7 @@ async function main() {
     }
     if (!fs.existsSync(file)) throw new Error(`No such file: ${file}`);
 
-    const roster = JSON.parse(fs.readFileSync(file, 'utf8')) as RosterEntry[];
+    const roster = JSON.parse(readTextFile(file)) as RosterEntry[];
     if (!Array.isArray(roster)) throw new Error('Roster must be a JSON array');
 
     // Validate the whole roster before writing anything. A half-provisioned
