@@ -25,14 +25,28 @@ async function bootstrap() {
     'https://propertyloop.ng',
     'https://www.propertyloop.ng',
     'https://admin.propertyloop.ng',
+    'https://team.propertyloop.ng', // staff portal
   ];
+
+  // Deploy previews and new subdomains change more often than this file does,
+  // and a missing origin fails in a way that reads as "the server is down"
+  // rather than "CORS" — the browser blocks the request before any response
+  // is seen. CORS_EXTRA_ORIGINS is the escape hatch: comma-separated, applied
+  // in every environment.
+  const extraOrigins = (process.env.CORS_EXTRA_ORIGINS ?? '')
+    .split(',')
+    .map((o) => o.trim())
+    .filter(Boolean);
+
   const origins =
     process.env.NODE_ENV === 'production'
-      ? prodOrigins
+      ? [...prodOrigins, ...extraOrigins]
       : [
           'http://localhost:5173',
           'http://localhost:5174', // admin app
+          'http://localhost:5175', // team portal
           ...prodOrigins,
+          ...extraOrigins,
         ];
 
   // CORS must be configured at app creation so the preflight handler is
