@@ -24,9 +24,11 @@ import {
 import { CreateTaskDto } from './dto/create-task.dto';
 import { UpdateTaskDto } from './dto/update-task.dto';
 import { StaffPermission } from '../../generated/prisma/client';
+import { StaffThrottle } from '../staff/staff-throttle';
 
 @UseGuards(JwtAuthGuard, StaffPermissionsGuard)
 @RequireStaff(StaffPermission.HANDLE_OPS)
+@StaffThrottle()
 @Controller('ops-queue')
 export class OpsQueueController {
   constructor(private readonly service: OpsQueueService) {}

@@ -24,9 +24,11 @@ import {
   ListingStatus,
   StaffPermission,
 } from '../../generated/prisma/client';
+import { StaffThrottle } from '../staff/staff-throttle';
 
 @UseGuards(JwtAuthGuard, StaffPermissionsGuard)
 @RequireStaff(StaffPermission.MANAGE_PROPERTIES)
+@StaffThrottle()
 @Controller('staff/listings')
 export class StaffListingsController {
   constructor(private readonly service: StaffListingsService) {}

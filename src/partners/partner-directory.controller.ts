@@ -24,6 +24,7 @@ import {
   PartnerStatus,
   StaffPermission,
 } from '../../generated/prisma/client';
+import { StaffThrottle } from '../staff/staff-throttle';
 
 /**
  * Team-portal management of the agent partner directory.
@@ -34,6 +35,7 @@ import {
  * should not be the one who signs off its payout.
  */
 @UseGuards(JwtAuthGuard, StaffPermissionsGuard)
+@StaffThrottle()
 @Controller('staff/partners')
 export class PartnerDirectoryController {
   constructor(private readonly service: PartnerDirectoryService) {}

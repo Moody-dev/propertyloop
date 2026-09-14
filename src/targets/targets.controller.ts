@@ -21,9 +21,11 @@ import {
 import { CreateTargetDto } from './dto/create-target.dto';
 import { RollForwardDto, UpdateTargetDto } from './dto/update-target.dto';
 import { StaffPermission, TargetUnit } from '../../generated/prisma/client';
+import { StaffThrottle } from '../staff/staff-throttle';
 
 @UseGuards(JwtAuthGuard, StaffPermissionsGuard)
 @RequireStaff()
+@StaffThrottle()
 @Controller('targets')
 export class TargetsController {
   constructor(private readonly service: TargetsService) {}

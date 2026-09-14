@@ -20,9 +20,11 @@ import {
 } from '../staff/decorators/current-staff.decorator';
 import { SaveDailyLogDto } from './dto/save-daily-log.dto';
 import { StaffPermission } from '../../generated/prisma/client';
+import { StaffThrottle } from '../staff/staff-throttle';
 
 @UseGuards(JwtAuthGuard, StaffPermissionsGuard)
 @RequireStaff()
+@StaffThrottle()
 @Controller('daily-logs')
 export class DailyLogsController {
   constructor(private readonly service: DailyLogsService) {}
@@ -57,6 +59,14 @@ export class DailyLogsController {
    * writing candidly about what is blocking them, and that is not the sort of
    * thing the whole company should browse.
    */
+  /** Everyone's entries for a recent window. Managers only, as below. */
+  @RequireStaff(StaffPermission.VIEW_ALL_LOGS)
+  @Get('recent')
+  recent(@Query('days') days?: string) {
+    const n = Number(days);
+    return this.service.listRecent(Number.isFinite(n) ? n : 14);
+  }
+
   @RequireStaff(StaffPermission.VIEW_ALL_LOGS)
   @Get('day/:day')
   forDay(@Param('day') day: string) {

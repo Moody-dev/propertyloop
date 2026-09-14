@@ -19,6 +19,7 @@ import {
 import { CreateThreadDto } from './dto/create-thread.dto';
 import { PostMessageDto } from './dto/post-message.dto';
 import { ConversationKind } from '../../generated/prisma/client';
+import { StaffThrottle } from '../staff/staff-throttle';
 
 /**
  * Internal staff messaging. Any active staff member may use it — there is no
@@ -27,6 +28,7 @@ import { ConversationKind } from '../../generated/prisma/client';
  */
 @UseGuards(JwtAuthGuard, StaffPermissionsGuard)
 @RequireStaff()
+@StaffThrottle()
 @Controller('threads')
 export class ThreadsController {
   constructor(private readonly service: ThreadsService) {}

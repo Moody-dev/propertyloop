@@ -22,7 +22,9 @@ import {
   SENSITIVE_PERMISSIONS,
 } from './staff-permissions';
 import { StaffPermission } from '../../generated/prisma/client';
+import { StaffThrottle } from './staff-throttle';
 
+@StaffThrottle()
 @Controller('staff')
 export class StaffController {
   constructor(private readonly service: StaffService) {}

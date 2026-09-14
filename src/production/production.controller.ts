@@ -18,6 +18,7 @@ import { SetShootStageDto, UpdateShootDto } from './dto/update-shoot.dto';
 import { CreateContentDto } from './dto/create-content.dto';
 import { UpdateContentDto } from './dto/update-content.dto';
 import { ShootStage, StaffPermission } from '../../generated/prisma/client';
+import { StaffThrottle } from '../staff/staff-throttle';
 
 /**
  * The video production line and the content calendar.
@@ -28,6 +29,7 @@ import { ShootStage, StaffPermission } from '../../generated/prisma/client';
  */
 @UseGuards(JwtAuthGuard, StaffPermissionsGuard)
 @RequireStaff(StaffPermission.MANAGE_CONTENT)
+@StaffThrottle()
 @Controller('production')
 export class ProductionController {
   constructor(private readonly service: ProductionService) {}

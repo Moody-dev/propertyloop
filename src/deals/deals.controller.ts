@@ -17,9 +17,11 @@ import { CreateDealDto } from './dto/create-deal.dto';
 import { SetDealStageDto, UpdateDealDto } from './dto/update-deal.dto';
 import { ListDealsDto } from './dto/list-deals.dto';
 import { StaffPermission } from '../../generated/prisma/client';
+import { StaffThrottle } from '../staff/staff-throttle';
 
 @UseGuards(JwtAuthGuard, StaffPermissionsGuard)
 @RequireStaff(StaffPermission.MANAGE_DEALS)
+@StaffThrottle()
 @Controller('deals')
 export class DealsController {
   constructor(private readonly service: DealsService) {}

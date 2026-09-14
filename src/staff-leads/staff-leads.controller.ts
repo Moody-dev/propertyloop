@@ -20,9 +20,11 @@ import {
 import { CreateStaffLeadDto } from './dto/create-staff-lead.dto';
 import { UpdateStaffLeadDto } from './dto/update-staff-lead.dto';
 import { LeadStatus, StaffPermission } from '../../generated/prisma/client';
+import { StaffThrottle } from '../staff/staff-throttle';
 
 @UseGuards(JwtAuthGuard, StaffPermissionsGuard)
 @RequireStaff(StaffPermission.MANAGE_LEADS)
+@StaffThrottle()
 @Controller('staff/leads')
 export class StaffLeadsController {
   constructor(private readonly service: StaffLeadsService) {}

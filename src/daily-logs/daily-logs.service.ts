@@ -44,6 +44,22 @@ export class DailyLogsService {
     });
   }
 
+  /**
+   * Everyone's entries for the last `days` Lagos days, newest first.
+   *
+   * One query. listForDay pairs each person with their recorded activity,
+   * which is several counts per person — right for reading one day, far too
+   * heavy to repeat for every day of a fortnight on each page load.
+   */
+  async listRecent(days = 14) {
+    const span = Math.min(Math.max(days, 1), 62);
+    const since = lagosDay(new Date(Date.now() - (span - 1) * 86_400_000));
+    return this.prisma.dailyLog.findMany({
+      where: { day: { gte: since } },
+      orderBy: [{ day: 'desc' }, { submittedAt: 'desc' }],
+    });
+  }
+
   /** Recent entries for one person, newest first. */
   async listForStaff(staffId: string, days = 30) {
     return this.prisma.dailyLog.findMany({
