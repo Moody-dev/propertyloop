@@ -2,10 +2,12 @@ import {
   ArrayUnique,
   IsArray,
   IsBoolean,
+  IsEmail,
   IsEnum,
   IsOptional,
   IsString,
   Length,
+  MaxLength,
 } from 'class-validator';
 import {
   Chapter,
@@ -14,6 +16,17 @@ import {
 } from '../../../generated/prisma/client';
 
 export class UpdateStaffDto {
+  /** Lives on the User row; the service writes it there. */
+  @IsString()
+  @IsOptional()
+  @MaxLength(120)
+  name?: string;
+
+  /** The sign-in address. Unique across every account, not just staff. */
+  @IsEmail()
+  @IsOptional()
+  email?: string;
+
   @IsString()
   @Length(1, 2)
   @IsOptional()

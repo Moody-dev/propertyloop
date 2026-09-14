@@ -16,6 +16,7 @@ import {
 import { StaffPermissionsGuard } from './guards/staff-permissions.guard';
 import { RequireStaff } from './decorators/require-staff.decorator';
 import { CreateStaffDto } from './dto/create-staff.dto';
+import { ProvisionStaffDto } from './dto/provision-staff.dto';
 import { SetStaffActiveDto, UpdateStaffDto } from './dto/update-staff.dto';
 import {
   DEFAULT_STAFF_PERMISSIONS,
@@ -59,6 +60,17 @@ export class StaffController {
       sensitive: SENSITIVE_PERMISSIONS,
       defaultsByRole: DEFAULT_STAFF_PERMISSIONS,
     };
+  }
+
+  /**
+   * Add a person from the portal: account and position together. Returns the
+   * temporary password once — see StaffService.provision.
+   */
+  @UseGuards(JwtAuthGuard, StaffPermissionsGuard)
+  @RequireStaff(StaffPermission.MANAGE_STAFF)
+  @Post('provision')
+  provision(@Body() dto: ProvisionStaffDto) {
+    return this.service.provision(dto);
   }
 
   @UseGuards(JwtAuthGuard, StaffPermissionsGuard)

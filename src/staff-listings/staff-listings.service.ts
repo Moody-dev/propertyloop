@@ -215,6 +215,10 @@ export class StaffListingsService {
       },
       select: LISTING_SELECT,
     });
+    if (dto.documentsPresent) {
+      await this.syncDocuments(id, dto.documentsPresent);
+      return this.findOne(id);
+    }
     return this.shape(listing);
   }
 
@@ -281,6 +285,48 @@ export class StaffListingsService {
     });
 
     return this.findOne(id);
+  }
+
+  /**
+   * Make the documents on file match what was ticked, then re-derive the
+   * listing's verified flag — true only once all four are held and checked,
+   * exactly as setDocumentVerified computes it.
+   */
+  private async syncDocuments(id: string, present: DocumentType[]) {
+    const held = await this.prisma.listingDocument.findMany({
+      where: { listingId: id },
+      select: { id: true, type: true },
+    });
+    const wanted = new Set(present);
+    const removed = held.filter((d) => !wanted.has(d.type)).map((d) => d.id);
+    const added = present.filter((t) => !held.some((d) => d.type === t));
+
+    await this.prisma.$transaction([
+      this.prisma.listingDocument.deleteMany({
+        where: { id: { in: removed } },
+      }),
+      this.prisma.listingDocument.createMany({
+        data: added.map((type) => ({
+          listingId: id,
+          type,
+          name: DOCUMENT_NAME[type],
+          date: '',
+        })),
+      }),
+    ]);
+
+    const now = await this.prisma.listingDocument.findMany({
+      where: { listingId: id },
+      select: { type: true, verified: true },
+    });
+    await this.prisma.listing.update({
+      where: { id },
+      data: {
+        verified: REQUIRED_DOCUMENTS.every((t) =>
+          now.some((d) => d.type === t && d.verified),
+        ),
+      },
+    });
   }
 
   async remove(id: string) {

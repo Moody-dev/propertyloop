@@ -1,4 +1,6 @@
 import {
+  ArrayUnique,
+  IsArray,
   IsEnum,
   IsInt,
   IsNumber,
@@ -7,7 +9,11 @@ import {
   MaxLength,
   Min,
 } from 'class-validator';
-import { Chapter, ListingType } from '../../../generated/prisma/client';
+import {
+  Chapter,
+  DocumentType,
+  ListingType,
+} from '../../../generated/prisma/client';
 
 export class UpdateStaffListingDto {
   @IsString()
@@ -47,4 +53,15 @@ export class UpdateStaffListingDto {
   @IsString()
   @IsOptional()
   dealId?: string | null;
+
+  /**
+   * Which of the four documents are now on file. Un-ticking one removes it,
+   * and its verification with it — a document no longer held cannot stay
+   * checked.
+   */
+  @IsArray()
+  @ArrayUnique()
+  @IsEnum(DocumentType, { each: true })
+  @IsOptional()
+  documentsPresent?: DocumentType[];
 }

@@ -178,9 +178,11 @@ export class ThreadsService {
     return this.prisma.conversation.create({
       data: {
         isInternal: true,
-        kind: subjectWhere
-          ? ConversationKind.STAFF_THREAD
-          : ConversationKind.STAFF_DIRECT,
+        // Always a thread. A GENERAL one has no record behind it, but it is
+        // still discussion with a title — filing it as STAFF_DIRECT put it in
+        // the Messages inbox as a DM and took it out of Threads. Direct
+        // messages have their own route, openDirect.
+        kind: ConversationKind.STAFF_THREAD,
         title: dto.title,
         listingId: dto.subject === 'LISTING' ? dto.subjectId : null,
         dealId: dto.subject === 'DEAL' ? dto.subjectId : null,

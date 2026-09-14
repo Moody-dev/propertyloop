@@ -4,6 +4,8 @@ import {
   Delete,
   Get,
   Param,
+  ParseBoolPipe,
+  ParseEnumPipe,
   Patch,
   Post,
   Query,
@@ -65,7 +67,10 @@ export class StaffListingsController {
   /** Publishing is its own permission — posting stock is not vouching for it. */
   @Patch(':id/status')
   @RequireStaff(StaffPermission.PUBLISH_PROPERTY)
-  setStatus(@Param('id') id: string, @Body('status') status: ListingStatus) {
+  setStatus(
+    @Param('id') id: string,
+    @Body('status', new ParseEnumPipe(ListingStatus)) status: ListingStatus,
+  ) {
     return this.service.setStatus(id, status);
   }
 
@@ -73,8 +78,8 @@ export class StaffListingsController {
   @RequireStaff(StaffPermission.VERIFY_DOCUMENTS)
   setDocumentVerified(
     @Param('id') id: string,
-    @Param('type') type: DocumentType,
-    @Body('verified') verified: boolean,
+    @Param('type', new ParseEnumPipe(DocumentType)) type: DocumentType,
+    @Body('verified', ParseBoolPipe) verified: boolean,
   ) {
     return this.service.setDocumentVerified(id, type, verified);
   }

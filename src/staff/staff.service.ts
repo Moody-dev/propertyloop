@@ -1,12 +1,16 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
 import { DEFAULT_STAFF_PERMISSIONS } from './staff-permissions';
 import { CreateStaffDto } from './dto/create-staff.dto';
 import { UpdateStaffDto } from './dto/update-staff.dto';
+import { ProvisionStaffDto } from './dto/provision-staff.dto';
+import { accountRole, generatePassword } from './staff-accounts';
 import { Prisma } from '../../generated/prisma/client';
 
 const STAFF_SELECT = {
@@ -88,8 +92,81 @@ export class StaffService {
     });
   }
 
+  /**
+   * Create the account and the position together, from the portal.
+   *
+   * The temporary password is returned exactly once and never stored in
+   * readable form — the database keeps only the hash. Whoever adds the person
+   * must hand it over privately; there is no way to show it again.
+   */
+  async provision(dto: ProvisionStaffDto) {
+    const email = dto.email.trim().toLowerCase();
+    const taken = await this.prisma.user.findUnique({
+      where: { email },
+      select: { id: true },
+    });
+    if (taken) {
+      throw new ConflictException('An account with that email already exists');
+    }
+
+    const temporaryPassword = generatePassword();
+    const passwordHash = await bcrypt.hash(temporaryPassword, 12);
+
+    // One transaction: a login with no position, or a position with no login,
+    // is a half-made person nobody can fix from the portal.
+    const staff = await this.prisma.$transaction(async (tx) => {
+      const user = await tx.user.create({
+        data: {
+          email,
+          passwordHash,
+          name: dto.name.trim(),
+          role: accountRole(dto.staffRole),
+          // Staff are onboarded in person; there is nothing for an email
+          // verification round-trip to prove.
+          emailVerifiedAt: new Date(),
+          signupPlatform: 'web',
+        },
+        select: { id: true },
+      });
+      return tx.staffProfile.create({
+        data: {
+          userId: user.id,
+          letter: dto.letter.toUpperCase(),
+          staffRole: dto.staffRole,
+          chapter: dto.chapter,
+          secondaryChapter: dto.secondaryChapter ?? null,
+          reportsToId: dto.reportsToId ?? null,
+          permissions: DEFAULT_STAFF_PERMISSIONS[dto.staffRole],
+        },
+        select: STAFF_SELECT,
+      });
+    });
+
+    return { staff, temporaryPassword };
+  }
+
   async update(id: string, dto: UpdateStaffDto) {
-    await this.findOne(id);
+    const current = await this.findOne(id);
+
+    // Name and email live on the account, not the position.
+    if (dto.name !== undefined || dto.email !== undefined) {
+      const email = dto.email?.trim().toLowerCase();
+      if (email) {
+        const holder = await this.prisma.user.findUnique({
+          where: { email },
+          select: { id: true },
+        });
+        if (holder && holder.id !== current.userId) {
+          throw new ConflictException(
+            'Another account already uses that email',
+          );
+        }
+      }
+      await this.prisma.user.update({
+        where: { id: current.userId },
+        data: { name: dto.name?.trim(), email },
+      });
+    }
 
     if (dto.reportsToId === id) {
       throw new BadRequestException(
