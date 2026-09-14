@@ -4,9 +4,11 @@ import { StaffListingsController } from './staff-listings.controller';
 import { PrismaModule } from '../prisma/prisma.module';
 import { AuthModule } from '../auth/auth.module';
 import { StaffModule } from '../staff/staff.module';
+import { StorageModule } from '../storage/storage.module';
+import { MediaModule } from '../media/media.module';
 
 @Module({
-  imports: [PrismaModule, AuthModule, StaffModule],
+  imports: [PrismaModule, AuthModule, StaffModule, StorageModule, MediaModule],
   controllers: [StaffListingsController],
   providers: [StaffListingsService],
   exports: [StaffListingsService],

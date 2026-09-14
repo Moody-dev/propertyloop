@@ -4,6 +4,8 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { B2Service } from '../storage/b2.service';
+import { MediaUrlService } from '../media/media-url.service';
 import {
   DocumentType,
   ListingOwnership,
@@ -22,6 +24,9 @@ import { UpdateStaffListingDto } from './dto/update-staff-listing.dto';
  *
  * ListingsService remains the agent-facing view and is untouched.
  */
+
+/** Same ceiling the photo DTO enforces; a listing page with more is a gallery nobody scrolls. */
+const MAX_PHOTOS = 30;
 
 /** The four documents a property is expected to have. */
 const REQUIRED_DOCUMENTS: DocumentType[] = [
@@ -53,6 +58,7 @@ const LISTING_SELECT = {
   status: true,
   verified: true,
   images: true,
+  coverImage: true,
   videoUrl: true,
   videoUrls: true,
   units: true,
@@ -70,7 +76,11 @@ type ListingRow = Prisma.ListingGetPayload<{ select: typeof LISTING_SELECT }>;
 
 @Injectable()
 export class StaffListingsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly storage: B2Service,
+    private readonly mediaUrl: MediaUrlService,
+  ) {}
 
   /**
    * Documents are reported as all four, present or not, rather than only the
@@ -91,6 +101,9 @@ export class StaffListingsService {
       status: listing.status,
       verified: listing.verified,
       photoCount: listing.images.length,
+      // Rewritten for display exactly as public listing reads are, so the
+      // portal shows the same image the website and the app do.
+      images: this.mediaUrl.rewriteMany(listing.images),
       hasVideo: Boolean(listing.videoUrl) || listing.videoUrls.length > 0,
       documents: REQUIRED_DOCUMENTS.map((type) => ({
         type,
@@ -285,6 +298,84 @@ export class StaffListingsService {
     });
 
     return this.findOne(id);
+  }
+
+  /**
+   * Add one photo to a listing.
+   *
+   * One file per request: a batch that fails halfway leaves nobody sure which
+   * photos landed, while one at a time lets the portal say exactly which did.
+   * The first photo becomes the cover — the website and the app both lead with
+   * it, so a listing with photos but no cover still looks empty.
+   */
+  async addPhoto(id: string, file: { mimetype?: string } | undefined) {
+    if (!file) throw new BadRequestException('No file provided');
+    if (!file.mimetype?.startsWith('image/')) {
+      throw new BadRequestException('Photos must be images');
+    }
+
+    const listing = await this.prisma.listing.findUnique({
+      where: { id },
+      select: { id: true, images: true, coverImage: true },
+    });
+    if (!listing) throw new NotFoundException('Property not found');
+    if (listing.images.length >= MAX_PHOTOS) {
+      throw new BadRequestException(
+        `A property can have at most ${MAX_PHOTOS} photos`,
+      );
+    }
+
+    // The storage service converts iPhone HEIC to JPEG before it lands.
+    const { fileUrl } = await this.storage.uploadFile(file, 'listings');
+
+    const updated = await this.prisma.listing.update({
+      where: { id },
+      data: {
+        images: [...listing.images, fileUrl],
+        ...(!listing.coverImage && { coverImage: fileUrl }),
+      },
+      select: LISTING_SELECT,
+    });
+    return this.shape(updated);
+  }
+
+  /**
+   * Reorder or remove photos. Whatever comes first becomes the cover.
+   *
+   * Only photos already on this listing are accepted. The portal holds the
+   * display URLs it was given, so each is matched to its stored original in
+   * either form — and anything matching neither is refused, or this route
+   * would let anyone attach an arbitrary image to a public listing.
+   */
+  async setPhotos(id: string, urls: string[]) {
+    const listing = await this.prisma.listing.findUnique({
+      where: { id },
+      select: { id: true, images: true },
+    });
+    if (!listing) throw new NotFoundException('Property not found');
+
+    const stored = new Map<string, string>();
+    for (const original of listing.images) {
+      stored.set(original, original);
+      const shown = this.mediaUrl.rewrite(original);
+      if (shown) stored.set(shown, original);
+    }
+
+    const next: string[] = [];
+    for (const url of urls) {
+      const original = stored.get(url);
+      if (!original) {
+        throw new BadRequestException('That photo is not on this property');
+      }
+      if (!next.includes(original)) next.push(original);
+    }
+
+    const updated = await this.prisma.listing.update({
+      where: { id },
+      data: { images: next, coverImage: next[0] ?? '' },
+      select: LISTING_SELECT,
+    });
+    return this.shape(updated);
   }
 
   /**

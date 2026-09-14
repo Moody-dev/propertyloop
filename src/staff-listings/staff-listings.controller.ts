@@ -9,8 +9,11 @@ import {
   Patch,
   Post,
   Query,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { StaffListingsService } from './staff-listings.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { StaffPermissionsGuard } from '../staff/guards/staff-permissions.guard';
@@ -21,6 +24,7 @@ import {
 } from '../staff/decorators/current-staff.decorator';
 import { CreateStaffListingDto } from './dto/create-staff-listing.dto';
 import { UpdateStaffListingDto } from './dto/update-staff-listing.dto';
+import { SetListingPhotosDto } from './dto/set-listing-photos.dto';
 import {
   DocumentType,
   ListingStatus,
@@ -82,6 +86,25 @@ export class StaffListingsController {
     @Body('verified', ParseBoolPipe) verified: boolean,
   ) {
     return this.service.setDocumentVerified(id, type, verified);
+  }
+
+  /**
+   * One photo per request — see StaffListingsService.addPhoto. Staff have no
+   * AGENT role, so the agent upload routes on /listings refuse them; this is
+   * the portal's own, behind MANAGE_PROPERTIES. 10MB, the same as agents'.
+   */
+  @Post(':id/photos')
+  @UseInterceptors(
+    FileInterceptor('file', { limits: { fileSize: 10 * 1024 * 1024 } }),
+  )
+  addPhoto(@Param('id') id: string, @UploadedFile() file: any) {
+    return this.service.addPhoto(id, file);
+  }
+
+  /** Reorder or remove photos; the first becomes the cover. */
+  @Patch(':id/photos')
+  setPhotos(@Param('id') id: string, @Body() dto: SetListingPhotosDto) {
+    return this.service.setPhotos(id, dto.images);
   }
 
   @Delete(':id')
