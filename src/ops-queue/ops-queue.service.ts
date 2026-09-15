@@ -2,10 +2,12 @@ import {
   BadRequestException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { UpdateTaskDto } from './dto/update-task.dto';
+import { StaffAlertsService } from '../staff-alerts/staff-alerts.service';
 
 /**
  * The operations queue.
@@ -63,7 +65,11 @@ export interface OpsItem {
 
 @Injectable()
 export class OpsQueueService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    // Optional so a unit test can build the service with Prisma alone.
+    @Optional() private readonly alerts?: StaffAlertsService,
+  ) {}
 
   /** Everything open across every queue, derived and manual together. */
   async list(includeResolved = false): Promise<OpsItem[]> {
@@ -242,7 +248,7 @@ export class OpsQueueService {
       );
     }
 
-    return this.prisma.opsTask.create({
+    const task = await this.prisma.opsTask.create({
       data: {
         subject: dto.subject,
         assigneeId: dto.assigneeId ?? null,
@@ -250,16 +256,20 @@ export class OpsQueueService {
         createdById,
       },
     });
+    if (task.assigneeId && task.assigneeId !== createdById) {
+      this.alerts?.opsTaskAssigned(task.subject, task.assigneeId, createdById);
+    }
+    return task;
   }
 
-  async updateTask(id: string, dto: UpdateTaskDto) {
+  async updateTask(id: string, dto: UpdateTaskDto, actorStaffId?: string) {
     const existing = await this.prisma.opsTask.findUnique({
       where: { id },
-      select: { id: true },
+      select: { id: true, assigneeId: true },
     });
     if (!existing) throw new NotFoundException('Task not found');
 
-    return this.prisma.opsTask.update({
+    const task = await this.prisma.opsTask.update({
       where: { id },
       data: {
         subject: dto.subject,
@@ -271,6 +281,10 @@ export class OpsQueueService {
         }),
       },
     });
+    if (dto.assigneeId && dto.assigneeId !== existing.assigneeId) {
+      this.alerts?.opsTaskAssigned(task.subject, dto.assigneeId, actorStaffId);
+    }
+    return task;
   }
 
   async removeTask(id: string) {

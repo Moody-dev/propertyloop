@@ -58,8 +58,12 @@ export class OpsQueueController {
   }
 
   @Patch('tasks/:id')
-  updateTask(@Param('id') id: string, @Body() dto: UpdateTaskDto) {
-    return this.service.updateTask(id, dto);
+  updateTask(
+    @Param('id') id: string,
+    @Body() dto: UpdateTaskDto,
+    @CurrentStaff() staff: CurrentStaffData,
+  ) {
+    return this.service.updateTask(id, dto, staff.id);
   }
 
   @Delete('tasks/:id')

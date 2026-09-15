@@ -2,19 +2,22 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import {
-  LeadStatus,
-  Prisma,
-} from '../../generated/prisma/client';
+import { LeadStatus, Prisma } from '../../generated/prisma/client';
 import { CreateLeadDto } from './dto/create-lead.dto';
 import { UpdateLeadDto } from './dto/update-lead.dto';
 import { ListLeadsDto } from './dto/list-leads.dto';
+import { StaffAlertsService } from '../staff-alerts/staff-alerts.service';
 
 @Injectable()
 export class LeadsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    // Optional so a unit test can build the service with Prisma alone.
+    @Optional() private readonly alerts?: StaffAlertsService,
+  ) {}
 
   async create(dto: CreateLeadDto, buyerUserId?: string) {
     const listing = await this.prisma.listing.findUnique({
@@ -23,7 +26,7 @@ export class LeadsService {
     });
     if (!listing) throw new NotFoundException('Listing not found');
 
-    return this.prisma.lead.create({
+    const lead = await this.prisma.lead.create({
       data: {
         listingId: listing.id,
         agentId: listing.agentId,
@@ -35,9 +38,13 @@ export class LeadsService {
         source: dto.source ?? 'LISTING_PAGE',
       },
       include: {
-        listing: { select: { id: true, title: true, coverImage: true, location: true } },
+        listing: {
+          select: { id: true, title: true, coverImage: true, location: true },
+        },
       },
     });
+    this.alerts?.houseEnquiry(listing.id, dto.name);
+    return lead;
   }
 
   async listForAgent(agentId: string, dto: ListLeadsDto) {
@@ -56,7 +63,13 @@ export class LeadsService {
         take: limit,
         include: {
           listing: {
-            select: { id: true, title: true, coverImage: true, location: true, slug: true },
+            select: {
+              id: true,
+              title: true,
+              coverImage: true,
+              location: true,
+              slug: true,
+            },
           },
         },
       }),
@@ -103,7 +116,9 @@ export class LeadsService {
       where: { id: leadId },
       data,
       include: {
-        listing: { select: { id: true, title: true, coverImage: true, location: true } },
+        listing: {
+          select: { id: true, title: true, coverImage: true, location: true },
+        },
       },
     });
   }

@@ -1,7 +1,8 @@
 import {
-  Injectable,
   BadRequestException,
+  Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
@@ -18,6 +19,7 @@ import {
   ListingStatus,
 } from '../../generated/prisma/client';
 import { FREE_LISTING_CAP } from '../listings/listing-limits';
+import { StaffAlertsService } from '../staff-alerts/staff-alerts.service';
 
 @Injectable()
 export class PaymentsService {
@@ -26,6 +28,7 @@ export class PaymentsService {
     private paystackService: PaystackService,
     private configService: ConfigService,
     private notifications: NotificationsService,
+    @Optional() private readonly alerts?: StaffAlertsService,
   ) {}
 
   async initializeJobPayment(
@@ -330,7 +333,11 @@ export class PaymentsService {
         update: { status: EarningStatus.AVAILABLE },
       }),
       this.prisma.vendorEarning.updateMany({
-        where: { jobId, kind: EarningKind.DEPOSIT, status: EarningStatus.PENDING },
+        where: {
+          jobId,
+          kind: EarningKind.DEPOSIT,
+          status: EarningStatus.PENDING,
+        },
         data: { status: EarningStatus.AVAILABLE },
       }),
     ]);
@@ -350,7 +357,9 @@ export class PaymentsService {
    * payout), so start() can call it unconditionally.
    */
   async releaseDeposit(jobId: string): Promise<void> {
-    const job = await this.prisma.vendorJob.findUnique({ where: { id: jobId } });
+    const job = await this.prisma.vendorJob.findUnique({
+      where: { id: jobId },
+    });
     if (!job) throw new NotFoundException('Job not found');
     if (job.depositAmount <= 0 || job.depositReleasedAt) return;
     if (job.escrowStatus !== EscrowStatus.LOCKED) {
@@ -442,6 +451,8 @@ export class PaymentsService {
       return req;
     });
 
+    this.alerts?.withdrawalRequested(total);
+
     console.log(
       `Withdrawal request ${request.id} created: vendor ${vendorUserId}, ${total} NGN → ${bankAccount.bankName} ${bankAccount.accountNumber}`,
     );
@@ -459,7 +470,11 @@ export class PaymentsService {
 
   // ─── Admin: manual payout queue ───────────────────────────────────────────
 
-  async listWithdrawals(opts: { page: number; limit: number; status?: string }) {
+  async listWithdrawals(opts: {
+    page: number;
+    limit: number;
+    status?: string;
+  }) {
     const { page, limit } = opts;
     const skip = (page - 1) * limit;
 
@@ -475,8 +490,17 @@ export class PaymentsService {
         skip,
         take: limit,
         include: {
-          vendor: { select: { id: true, name: true, email: true, phone: true } },
-          earnings: { select: { id: true, jobTitle: true, clientName: true, amount: true } },
+          vendor: {
+            select: { id: true, name: true, email: true, phone: true },
+          },
+          earnings: {
+            select: {
+              id: true,
+              jobTitle: true,
+              clientName: true,
+              amount: true,
+            },
+          },
         },
       }),
       this.prisma.withdrawalRequest.count({ where }),
@@ -577,7 +601,9 @@ export class PaymentsService {
       where: { id: withdrawalId },
       include: {
         vendor: { select: { id: true, name: true, email: true, phone: true } },
-        earnings: { select: { id: true, jobTitle: true, clientName: true, amount: true } },
+        earnings: {
+          select: { id: true, jobTitle: true, clientName: true, amount: true },
+        },
       },
     });
   }
@@ -658,7 +684,9 @@ export class PaymentsService {
       body: `The bank transfer for "${job.title}" failed. The money is back in your balance — check your payout account and try again.`,
       data: { jobId: job.id },
     });
-    console.warn(`Transfer failed for job ${job.id} → earning back to AVAILABLE`);
+    console.warn(
+      `Transfer failed for job ${job.id} → earning back to AVAILABLE`,
+    );
   }
 
   async resolveDisputeRelease(jobId: string): Promise<void> {
@@ -698,7 +726,11 @@ export class PaymentsService {
       }),
       // Resolved for the vendor, so any deposit still held is theirs too.
       this.prisma.vendorEarning.updateMany({
-        where: { jobId, kind: EarningKind.DEPOSIT, status: EarningStatus.PENDING },
+        where: {
+          jobId,
+          kind: EarningKind.DEPOSIT,
+          status: EarningStatus.PENDING,
+        },
         data: { status: EarningStatus.AVAILABLE },
       }),
     ]);

@@ -49,6 +49,7 @@ import { ProductionModule } from './production/production.module';
 import { TargetsModule } from './targets/targets.module';
 import { OpsQueueModule } from './ops-queue/ops-queue.module';
 import { ThreadsModule } from './threads/threads.module';
+import { StaffAlertsModule } from './staff-alerts/staff-alerts.module';
 
 @Module({
   imports: [
@@ -136,6 +137,7 @@ import { ThreadsModule } from './threads/threads.module';
     TargetsModule,
     OpsQueueModule,
     ThreadsModule,
+    StaffAlertsModule,
   ],
   controllers: [AppController],
   providers: [AppService, { provide: APP_GUARD, useClass: ThrottlerGuard }],

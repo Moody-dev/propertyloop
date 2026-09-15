@@ -1,9 +1,10 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateDealDto } from './dto/create-deal.dto';
 import { UpdateDealDto } from './dto/update-deal.dto';
 import { ListDealsDto } from './dto/list-deals.dto';
 import { DealStage, MandateType, Prisma } from '../../generated/prisma/client';
+import { StaffAlertsService } from '../staff-alerts/staff-alerts.service';
 
 /** No activity in this many days marks a deal stale. */
 const STALE_AFTER_DAYS = 7;
@@ -39,7 +40,11 @@ const DEAL_SELECT = {
 
 @Injectable()
 export class DealsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    // Optional so a unit test can build the service with Prisma alone.
+    @Optional() private readonly alerts?: StaffAlertsService,
+  ) {}
 
   /**
    * valueNaira is BigInt in the database (a Banana Island mandate overflows
@@ -100,7 +105,7 @@ export class DealsService {
     return this.serialize(deal);
   }
 
-  async create(dto: CreateDealDto) {
+  async create(dto: CreateDealDto, actorStaffId?: string) {
     const deal = await this.prisma.deal.create({
       data: {
         company: dto.company,
@@ -122,13 +127,20 @@ export class DealsService {
       },
       select: DEAL_SELECT,
     });
+    this.alerts?.dealAssigned(dto.company, dto.ownerId, actorStaffId);
     return this.serialize(deal);
   }
 
-  async update(id: string, dto: UpdateDealDto) {
+  async update(id: string, dto: UpdateDealDto, actorStaffId?: string) {
     const existing = await this.prisma.deal.findUnique({
       where: { id },
-      select: { id: true, mandate: true, mandateSignedAt: true },
+      select: {
+        id: true,
+        mandate: true,
+        mandateSignedAt: true,
+        ownerId: true,
+        company: true,
+      },
     });
     if (!existing) throw new NotFoundException('Deal not found');
 
@@ -160,6 +172,13 @@ export class DealsService {
       },
       select: DEAL_SELECT,
     });
+    if (dto.ownerId && dto.ownerId !== existing.ownerId) {
+      this.alerts?.dealAssigned(
+        dto.company ?? existing.company,
+        dto.ownerId,
+        actorStaffId,
+      );
+    }
     return this.serialize(deal);
   }
 

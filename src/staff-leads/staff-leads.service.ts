@@ -1,8 +1,9 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { LeadStatus, Prisma } from '../../generated/prisma/client';
 import { CreateStaffLeadDto } from './dto/create-staff-lead.dto';
 import { UpdateStaffLeadDto } from './dto/update-staff-lead.dto';
+import { StaffAlertsService } from '../staff-alerts/staff-alerts.service';
 
 /**
  * Leads as the staff portal sees them.
@@ -34,7 +35,11 @@ type LeadRow = Prisma.LeadGetPayload<{ select: typeof LEAD_SELECT }>;
 
 @Injectable()
 export class StaffLeadsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    // Optional so a unit test can build the service with Prisma alone.
+    @Optional() private readonly alerts?: StaffAlertsService,
+  ) {}
 
   /**
    * budgetNaira is BigInt in the database. main.ts teaches JSON.stringify to
@@ -125,13 +130,22 @@ export class StaffLeadsService {
       },
       select: LEAD_SELECT,
     });
+    if (dto.ownerId && dto.ownerId !== staffId) {
+      this.alerts?.leadAssigned(dto.name, dto.ownerId, staffId);
+    }
     return this.shape(lead);
   }
 
-  async update(id: string, dto: UpdateStaffLeadDto) {
+  async update(id: string, dto: UpdateStaffLeadDto, actorStaffId?: string) {
     const existing = await this.prisma.lead.findUnique({
       where: { id },
-      select: { id: true, status: true, contactedAt: true },
+      select: {
+        id: true,
+        status: true,
+        contactedAt: true,
+        name: true,
+        ownerStaffId: true,
+      },
     });
     if (!existing) throw new NotFoundException('Lead not found');
 
@@ -167,6 +181,13 @@ export class StaffLeadsService {
       },
       select: LEAD_SELECT,
     });
+    if (dto.ownerId && dto.ownerId !== existing.ownerStaffId) {
+      this.alerts?.leadAssigned(
+        dto.name ?? existing.name,
+        dto.ownerId,
+        actorStaffId,
+      );
+    }
     return this.shape(lead);
   }
 

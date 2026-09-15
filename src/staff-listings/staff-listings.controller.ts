@@ -75,8 +75,9 @@ export class StaffListingsController {
   setStatus(
     @Param('id') id: string,
     @Body('status', new ParseEnumPipe(ListingStatus)) status: ListingStatus,
+    @CurrentStaff() staff: CurrentStaffData,
   ) {
-    return this.service.setStatus(id, status);
+    return this.service.setStatus(id, status, staff.id);
   }
 
   @Patch(':id/documents/:type')

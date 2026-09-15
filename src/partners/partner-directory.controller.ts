@@ -75,8 +75,12 @@ export class PartnerDirectoryController {
 
   @RequireStaff(StaffPermission.MANAGE_PARTNERS)
   @Patch(':id/owner')
-  assign(@Param('id') id: string, @Body('staffId') staffId: string | null) {
-    return this.service.assign(id, staffId || null);
+  assign(
+    @Param('id') id: string,
+    @Body('staffId') staffId: string | null,
+    @CurrentStaff() staff: CurrentStaffData,
+  ) {
+    return this.service.assign(id, staffId || null, staff.id);
   }
 
   @RequireStaff(StaffPermission.MANAGE_PARTNERS)

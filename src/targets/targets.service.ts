@@ -2,6 +2,7 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { CurrentStaffData } from '../staff/decorators/current-staff.decorator';
 import { PrismaService } from '../prisma/prisma.service';
@@ -13,6 +14,7 @@ import {
   TargetProvenance,
   StaffRole,
 } from '../../generated/prisma/client';
+import { StaffAlertsService } from '../staff-alerts/staff-alerts.service';
 
 /** YYYY-MM for the current month, Lagos time. */
 export function currentPeriod(at: Date = new Date()): string {
@@ -52,7 +54,11 @@ export type MetricKey = (typeof METRIC_KEYS)[number];
 
 @Injectable()
 export class TargetsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    // Optional so a unit test can build the service with Prisma alone.
+    @Optional() private readonly alerts?: StaffAlertsService,
+  ) {}
 
   /**
    * Whether someone may set targets for a given person.
@@ -222,7 +228,7 @@ export class TargetsService {
 
   async create(actor: CurrentStaffData, dto: CreateTargetDto) {
     await this.assertMayManageFor(actor, dto.staffId);
-    return this.prisma.staffTarget.create({
+    const target = await this.prisma.staffTarget.create({
       data: {
         staffId: dto.staffId,
         label: dto.label,
@@ -239,6 +245,8 @@ export class TargetsService {
         metricKey: dto.metricKey ?? null,
       },
     });
+    this.alerts?.targetSet(dto.label, dto.staffId, actor.id);
+    return target;
   }
 
   async update(actor: CurrentStaffData, id: string, dto: UpdateTargetDto) {

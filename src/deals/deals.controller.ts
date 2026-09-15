@@ -18,6 +18,10 @@ import { SetDealStageDto, UpdateDealDto } from './dto/update-deal.dto';
 import { ListDealsDto } from './dto/list-deals.dto';
 import { StaffPermission } from '../../generated/prisma/client';
 import { StaffThrottle } from '../staff/staff-throttle';
+import {
+  CurrentStaff,
+  CurrentStaffData,
+} from '../staff/decorators/current-staff.decorator';
 
 @UseGuards(JwtAuthGuard, StaffPermissionsGuard)
 @RequireStaff(StaffPermission.MANAGE_DEALS)
@@ -42,13 +46,17 @@ export class DealsController {
   }
 
   @Post()
-  create(@Body() dto: CreateDealDto) {
-    return this.service.create(dto);
+  create(@Body() dto: CreateDealDto, @CurrentStaff() staff: CurrentStaffData) {
+    return this.service.create(dto, staff.id);
   }
 
   @Patch(':id')
-  update(@Param('id') id: string, @Body() dto: UpdateDealDto) {
-    return this.service.update(id, dto);
+  update(
+    @Param('id') id: string,
+    @Body() dto: UpdateDealDto,
+    @CurrentStaff() staff: CurrentStaffData,
+  ) {
+    return this.service.update(id, dto, staff.id);
   }
 
   @Patch(':id/stage')

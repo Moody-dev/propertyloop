@@ -56,8 +56,12 @@ export class StaffLeadsController {
   }
 
   @Patch(':id')
-  update(@Param('id') id: string, @Body() dto: UpdateStaffLeadDto) {
-    return this.service.update(id, dto);
+  update(
+    @Param('id') id: string,
+    @Body() dto: UpdateStaffLeadDto,
+    @CurrentStaff() staff: CurrentStaffData,
+  ) {
+    return this.service.update(id, dto, staff.id);
   }
 
   @Delete(':id')

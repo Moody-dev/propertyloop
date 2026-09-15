@@ -1,9 +1,15 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  NotFoundException,
+  Optional,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { MailService } from '../mail/mail.service';
 import { CreateReportDto } from './dto/create-report.dto';
 import { ListReportsDto } from './dto/list-reports.dto';
 import { UpdateReportDto } from './dto/update-report.dto';
+import { StaffAlertsService } from '../staff-alerts/staff-alerts.service';
 
 // App Store guideline 1.2 requires a "timely response" to content reports —
 // we commit to acting within 24 hours. That's only possible if someone
@@ -19,6 +25,7 @@ export class ReportsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly mailService: MailService,
+    @Optional() private readonly alerts?: StaffAlertsService,
   ) {}
 
   async create(dto: CreateReportDto, reporterId?: string) {
@@ -30,6 +37,8 @@ export class ReportsService {
         ...(reporterId ? { reporterId } : {}),
       },
     });
+
+    this.alerts?.reportFiled(report.targetType, report.reason);
 
     this.notifyModerators(report).catch((err) =>
       this.logger.error(`Report notification email failed: ${err.message}`),

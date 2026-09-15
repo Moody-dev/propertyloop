@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { B2Service } from '../storage/b2.service';
@@ -17,6 +18,7 @@ import {
 } from '../../generated/prisma/client';
 import { CreateStaffListingDto } from './dto/create-staff-listing.dto';
 import { UpdateStaffListingDto } from './dto/update-staff-listing.dto';
+import { StaffAlertsService } from '../staff-alerts/staff-alerts.service';
 
 /**
  * Properties as the staff portal sees them.
@@ -127,6 +129,7 @@ export class StaffListingsService {
     private readonly prisma: PrismaService,
     private readonly storage: B2Service,
     private readonly mediaUrl: MediaUrlService,
+    @Optional() private readonly alerts?: StaffAlertsService,
   ) {}
 
   /**
@@ -266,6 +269,7 @@ export class StaffListingsService {
       },
       select: LISTING_SELECT,
     });
+    this.alerts?.propertyForReview(dto.title, staffId);
     return this.shape(listing);
   }
 
@@ -337,10 +341,16 @@ export class StaffListingsService {
    * this month", and re-publishing a paused listing must not move the date it
    * first went live.
    */
-  async setStatus(id: string, status: ListingStatus) {
+  async setStatus(id: string, status: ListingStatus, actorStaffId?: string) {
     const existing = await this.prisma.listing.findUnique({
       where: { id },
-      select: { id: true, publishedAt: true },
+      select: {
+        id: true,
+        publishedAt: true,
+        status: true,
+        title: true,
+        sourcedByStaffId: true,
+      },
     });
     if (!existing) throw new NotFoundException('Property not found');
 
@@ -353,6 +363,16 @@ export class StaffListingsService {
       },
       select: LISTING_SELECT,
     });
+    if (
+      status === ListingStatus.ACTIVE &&
+      existing.status !== ListingStatus.ACTIVE
+    ) {
+      this.alerts?.propertyPublished(
+        existing.title,
+        existing.sourcedByStaffId,
+        actorStaffId,
+      );
+    }
     return this.shape(listing);
   }
 

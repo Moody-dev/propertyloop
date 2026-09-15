@@ -3,6 +3,7 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateThreadDto } from './dto/create-thread.dto';
@@ -12,6 +13,7 @@ import {
   ConversationParticipantRole,
   Prisma,
 } from '../../generated/prisma/client';
+import { StaffAlertsService } from '../staff-alerts/staff-alerts.service';
 
 /**
  * Internal staff conversations, built on the existing messaging tables.
@@ -59,7 +61,11 @@ export type ThreadSubjectKind =
 
 @Injectable()
 export class ThreadsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    // Optional so a unit test can build the service with Prisma alone.
+    @Optional() private readonly alerts?: StaffAlertsService,
+  ) {}
 
   /** Every internal conversation this user is in. */
   async list(userId: string, kind?: ConversationKind) {
@@ -175,7 +181,7 @@ export class ThreadsService {
       throw new BadRequestException('Unknown subject kind');
     }
 
-    return this.prisma.conversation.create({
+    const thread = await this.prisma.conversation.create({
       data: {
         isInternal: true,
         // Always a thread. A GENERAL one has no record behind it, but it is
@@ -205,6 +211,8 @@ export class ThreadsService {
       },
       include: THREAD_INCLUDE,
     });
+    this.alerts?.threadCreated(thread.id, creatorUserId);
+    return thread;
   }
 
   /**
@@ -298,6 +306,7 @@ export class ThreadsService {
       }),
     ]);
 
+    this.alerts?.messagePosted(threadId, userId, dto.text);
     return message;
   }
 

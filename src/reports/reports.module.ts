@@ -4,9 +4,10 @@ import { ReportsController } from './reports.controller';
 import { PrismaModule } from '../prisma/prisma.module';
 import { AuthModule } from '../auth/auth.module';
 import { MailModule } from '../mail/mail.module';
+import { StaffAlertsModule } from '../staff-alerts/staff-alerts.module';
 
 @Module({
-  imports: [PrismaModule, AuthModule, MailModule],
+  imports: [StaffAlertsModule, PrismaModule, AuthModule, MailModule],
   controllers: [ReportsController],
   providers: [ReportsService],
   exports: [ReportsService],

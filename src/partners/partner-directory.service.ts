@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import {
@@ -16,6 +17,7 @@ import {
   partnerPayoutGaps,
   partnerPayoutReady,
 } from './partners.service';
+import { StaffAlertsService } from '../staff-alerts/staff-alerts.service';
 
 /** Operations' onboarding commitment for a new realtor, in hours. */
 export const PARTNER_CONTACT_SLA_HOURS = 48;
@@ -29,7 +31,11 @@ export const PARTNER_CONTACT_SLA_HOURS = 48;
  */
 @Injectable()
 export class PartnerDirectoryService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    // Optional so a unit test can build the service with Prisma alone.
+    @Optional() private readonly alerts?: StaffAlertsService,
+  ) {}
 
   async list(options: {
     page: number;
@@ -230,12 +236,14 @@ export class PartnerDirectoryService {
     return updated;
   }
 
-  async assign(id: string, staffId: string | null) {
+  async assign(id: string, staffId: string | null, actorStaffId?: string) {
     await this.ensureExists(id);
-    return this.prisma.agentPartner.update({
+    const partner = await this.prisma.agentPartner.update({
       where: { id },
       data: { ownerStaffId: staffId },
     });
+    if (staffId) this.alerts?.partnerAssigned(id, staffId, actorStaffId);
+    return partner;
   }
 
   async logContact(id: string) {

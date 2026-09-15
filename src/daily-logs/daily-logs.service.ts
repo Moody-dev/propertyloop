@@ -1,6 +1,7 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { SaveDailyLogDto } from './dto/save-daily-log.dto';
+import { StaffAlertsService } from '../staff-alerts/staff-alerts.service';
 
 /**
  * The team works to Lagos time. Deriving "which day" from the server's clock
@@ -35,7 +36,11 @@ export interface DayActivity {
 
 @Injectable()
 export class DailyLogsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    // Optional so a unit test can build the service with Prisma alone.
+    @Optional() private readonly alerts?: StaffAlertsService,
+  ) {}
 
   /** One person's entry for one day, or null. */
   async findOne(staffId: string, day: string) {
@@ -182,7 +187,11 @@ export class DailyLogsService {
 
   /** Create or replace one person's entry for one day. */
   async save(staffId: string, day: string, dto: SaveDailyLogDto) {
-    return this.prisma.dailyLog.upsert({
+    const before = await this.prisma.dailyLog.findUnique({
+      where: { staffId_day: { staffId, day } },
+      select: { blockers: true },
+    });
+    const log = await this.prisma.dailyLog.upsert({
       where: { staffId_day: { staffId, day } },
       create: {
         staffId,
@@ -197,6 +206,12 @@ export class DailyLogsService {
         plan: dto.plan ?? '',
       },
     });
+    // Only a new or changed blocker: re-saving the same log is not news.
+    const blockers = (dto.blockers ?? '').trim();
+    if (blockers && blockers !== (before?.blockers ?? '').trim()) {
+      this.alerts?.blockerLogged(staffId, blockers);
+    }
+    return log;
   }
 
   async remove(staffId: string, day: string) {

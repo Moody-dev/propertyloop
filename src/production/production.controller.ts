@@ -19,6 +19,10 @@ import { CreateContentDto } from './dto/create-content.dto';
 import { UpdateContentDto } from './dto/update-content.dto';
 import { ShootStage, StaffPermission } from '../../generated/prisma/client';
 import { StaffThrottle } from '../staff/staff-throttle';
+import {
+  CurrentStaff,
+  CurrentStaffData,
+} from '../staff/decorators/current-staff.decorator';
 
 /**
  * The video production line and the content calendar.
@@ -46,13 +50,20 @@ export class ProductionController {
   }
 
   @Post('shoots')
-  createShoot(@Body() dto: CreateShootDto) {
-    return this.service.createShoot(dto);
+  createShoot(
+    @Body() dto: CreateShootDto,
+    @CurrentStaff() staff: CurrentStaffData,
+  ) {
+    return this.service.createShoot(dto, staff.id);
   }
 
   @Patch('shoots/:id')
-  updateShoot(@Param('id') id: string, @Body() dto: UpdateShootDto) {
-    return this.service.updateShoot(id, dto);
+  updateShoot(
+    @Param('id') id: string,
+    @Body() dto: UpdateShootDto,
+    @CurrentStaff() staff: CurrentStaffData,
+  ) {
+    return this.service.updateShoot(id, dto, staff.id);
   }
 
   @Patch('shoots/:id/stage')

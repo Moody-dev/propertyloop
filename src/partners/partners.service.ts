@@ -3,6 +3,7 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
@@ -19,6 +20,7 @@ import {
 } from '../../generated/prisma/client';
 import { RegisterPartnerDto } from './dto/register-partner.dto';
 import { normalizePhone } from '../common/phone';
+import { StaffAlertsService } from '../staff-alerts/staff-alerts.service';
 
 /** Commission rate applied when a partner's introduction closes. */
 export const DEFAULT_PARTNER_COMMISSION_PERCENT = 2.5;
@@ -42,6 +44,7 @@ export class PartnersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly mail: MailService,
+    @Optional() private readonly alerts?: StaffAlertsService,
   ) {}
 
   /**
@@ -195,6 +198,8 @@ export class PartnersService {
 
       return partner;
     });
+
+    this.alerts?.partnerRegistered(dto.fullName.trim(), code);
 
     // Fire and forget. The registration is already committed, and a Resend
     // outage must not turn a successful signup into an error the partner
@@ -464,6 +469,7 @@ export class PartnersService {
       select: { id: true },
     });
 
+    this.alerts?.partnerIntroducedBuyer(partner.id, listingId, dto.name.trim());
     return { leadId: lead.id, duplicate: false };
   }
 }

@@ -3,6 +3,7 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { PaymentsService } from '../payments/payments.service';
@@ -21,6 +22,7 @@ import { ListJobsDto } from './dto/list-jobs.dto';
 import { CompleteJobDto } from './dto/complete-job.dto';
 import { DisputeJobDto } from './dto/dispute-job.dto';
 import { AddDisputeMessageDto } from './dto/add-dispute-message.dto';
+import { StaffAlertsService } from '../staff-alerts/staff-alerts.service';
 
 // Vendors get 48 hours to respond once a dispute is raised.
 const DISPUTE_RESPONSE_WINDOW_MS = 48 * 60 * 60 * 1000;
@@ -36,6 +38,7 @@ export class VendorJobsService {
     private readonly prisma: PrismaService,
     private readonly paymentsService: PaymentsService,
     private readonly notifications: NotificationsService,
+    @Optional() private readonly alerts?: StaffAlertsService,
   ) {}
 
   // ─── Booking creation (buyer → vendor) ───────────────────────────────────
@@ -60,7 +63,9 @@ export class VendorJobsService {
       throw new NotFoundException('Vendor not found');
     }
     if (!vendor.vendorProfile.availableForHire) {
-      throw new BadRequestException('This vendor is not accepting new bookings');
+      throw new BadRequestException(
+        'This vendor is not accepting new bookings',
+      );
     }
 
     // The buyer pays the vendor's listed price with no markup. PropertyLoop's
@@ -184,7 +189,10 @@ export class VendorJobsService {
       },
     });
     if (!job) throw new NotFoundException('Job not found');
-    if (job.vendorUserId !== requestingUserId && job.buyerUserId !== requestingUserId) {
+    if (
+      job.vendorUserId !== requestingUserId &&
+      job.buyerUserId !== requestingUserId
+    ) {
       throw new ForbiddenException('You are not a party to this job');
     }
     return this.serialize(job);
@@ -269,7 +277,10 @@ export class VendorJobsService {
 
   async complete(vendorUserId: string, jobId: string, dto: CompleteJobDto) {
     const job = await this.assertVendorOwns(vendorUserId, jobId);
-    if (job.status !== JobStatus.IN_PROGRESS && job.status !== JobStatus.ACCEPTED) {
+    if (
+      job.status !== JobStatus.IN_PROGRESS &&
+      job.status !== JobStatus.ACCEPTED
+    ) {
       throw new BadRequestException('Only active jobs can be marked complete');
     }
     // Guarded above (only active jobs reach here), so this runs once per job —
@@ -318,7 +329,9 @@ export class VendorJobsService {
       throw new BadRequestException('Only completed jobs can be confirmed');
     }
     if (job.escrowStatus !== EscrowStatus.LOCKED) {
-      throw new BadRequestException('Escrow must be locked (payment confirmed) before confirming');
+      throw new BadRequestException(
+        'Escrow must be locked (payment confirmed) before confirming',
+      );
     }
 
     // Call payments service to release escrow and initiate transfer
@@ -352,7 +365,9 @@ export class VendorJobsService {
       throw new BadRequestException('Only completed jobs can be disputed');
     }
     if (job.escrowStatus !== EscrowStatus.LOCKED) {
-      throw new BadRequestException('Escrow is not currently locked for this job');
+      throw new BadRequestException(
+        'Escrow is not currently locked for this job',
+      );
     }
 
     // Open the dispute and seed the thread: the customer's claim + a system
@@ -382,6 +397,8 @@ export class VendorJobsService {
         },
       }),
     ]);
+
+    this.alerts?.disputeOpened(job.title);
 
     void this.notifications.notify({
       userId: job.vendorUserId,
@@ -423,7 +440,9 @@ export class VendorJobsService {
     userId: string,
     dto: AddDisputeMessageDto,
   ) {
-    const job = await this.prisma.vendorJob.findUnique({ where: { id: jobId } });
+    const job = await this.prisma.vendorJob.findUnique({
+      where: { id: jobId },
+    });
     if (!job) throw new NotFoundException('Job not found');
 
     let role: DisputeAuthorRole;
@@ -543,7 +562,9 @@ export class VendorJobsService {
     jobId: string,
     dto: AddDisputeMessageDto,
   ) {
-    const job = await this.prisma.vendorJob.findUnique({ where: { id: jobId } });
+    const job = await this.prisma.vendorJob.findUnique({
+      where: { id: jobId },
+    });
     if (!job) throw new NotFoundException('Job not found');
     if (job.escrowStatus !== EscrowStatus.DISPUTED) {
       throw new BadRequestException('This job is not currently under dispute');
@@ -585,7 +606,9 @@ export class VendorJobsService {
     outcome: 'release' | 'refund',
     note?: string,
   ) {
-    const job = await this.prisma.vendorJob.findUnique({ where: { id: jobId } });
+    const job = await this.prisma.vendorJob.findUnique({
+      where: { id: jobId },
+    });
     if (!job) throw new NotFoundException('Job not found');
     if (job.escrowStatus !== EscrowStatus.DISPUTED) {
       throw new BadRequestException('Job is not in disputed state');
@@ -661,7 +684,9 @@ export class VendorJobsService {
   // ─── Helpers ──────────────────────────────────────────────────────────────
 
   private async assertVendorOwns(vendorUserId: string, jobId: string) {
-    const job = await this.prisma.vendorJob.findUnique({ where: { id: jobId } });
+    const job = await this.prisma.vendorJob.findUnique({
+      where: { id: jobId },
+    });
     if (!job) throw new NotFoundException('Job not found');
     if (job.vendorUserId !== vendorUserId) {
       throw new ForbiddenException('You can only manage your own jobs');
@@ -749,7 +774,11 @@ export class VendorJobsService {
         avatar: job.clientAvatar ?? null,
       },
       vendor: job.vendor
-        ? { id: job.vendor.id, name: job.vendor.name, avatar: job.vendor.avatarUrl }
+        ? {
+            id: job.vendor.id,
+            name: job.vendor.name,
+            avatar: job.vendor.avatarUrl,
+          }
         : null,
       thread: (job.disputeMessages ?? []).map((m: any) =>
         this.serializeDisputeMessage(m, job, maskAdmin),

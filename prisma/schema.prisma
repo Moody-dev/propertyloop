@@ -367,6 +367,7 @@ model User {
   agentPurchases             PropertyPurchase[]        @relation("AgentPurchases")
   notifications              Notification[]
   pushTokens                 PushToken[]
+  webPushSubscriptions       WebPushSubscription[]
   vendorServices             VendorService[]           @relation("VendorServices")
   vendorAvailability         VendorAvailability?       @relation("VendorAvailability")
   vendorBlackouts            VendorBlackout[]          @relation("VendorBlackouts")
@@ -1616,6 +1617,30 @@ model PushToken {
   lastUsedAt DateTime @default(now())
 
   @@index([userId])
+}
+
+/// A phone or browser subscribed to team portal notifications (Web Push).
+model WebPushSubscription {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  endpoint   String   @unique
+  p256dh     String
+  auth       String
+  userAgent  String?
+  createdAt  DateTime @default(now())
+  lastUsedAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+/// The server's VAPID key pair, when it is not supplied through the environment.
+model WebPushConfig {
+  id         String   @id
+  publicKey  String
+  privateKey String
+  createdAt  DateTime @default(now())
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateShootDto } from './dto/create-shoot.dto';
 import { UpdateShootDto } from './dto/update-shoot.dto';
@@ -10,6 +10,7 @@ import {
   Prisma,
   ShootStage,
 } from '../../generated/prisma/client';
+import { StaffAlertsService } from '../staff-alerts/staff-alerts.service';
 
 const ONE_DAY_MS = 86_400_000;
 
@@ -24,7 +25,11 @@ const STAFF_BRIEF = {
 
 @Injectable()
 export class ProductionService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    // Optional so a unit test can build the service with Prisma alone.
+    @Optional() private readonly alerts?: StaffAlertsService,
+  ) {}
 
   /**
    * PropertyLoop stock a shoot can be for: id, title and where it is.
@@ -83,8 +88,8 @@ export class ProductionService {
     return scheduledFor.getTime() - prepCompleteAt.getTime() < ONE_DAY_MS;
   }
 
-  async createShoot(dto: CreateShootDto) {
-    return this.prisma.shoot.create({
+  async createShoot(dto: CreateShootDto, actorStaffId?: string) {
+    const shoot = await this.prisma.shoot.create({
       data: {
         title: dto.title,
         location: dto.location,
@@ -97,12 +102,19 @@ export class ProductionService {
       },
       include: { presenter: STAFF_BRIEF, secretary: STAFF_BRIEF },
     });
+    this.alerts?.shootAssigned(
+      shoot.title,
+      [shoot.presenterId, shoot.secretaryId],
+      actorStaffId,
+      shoot.scheduledFor,
+    );
+    return shoot;
   }
 
-  async updateShoot(id: string, dto: UpdateShootDto) {
+  async updateShoot(id: string, dto: UpdateShootDto, actorStaffId?: string) {
     const existing = await this.prisma.shoot.findUnique({
       where: { id },
-      select: { id: true, stage: true },
+      select: { id: true, stage: true, presenterId: true, secretaryId: true },
     });
     if (!existing) throw new NotFoundException('Shoot not found');
 
@@ -114,7 +126,7 @@ export class ProductionService {
         ? ShootStage.REQUESTED
         : undefined;
 
-    return this.prisma.shoot.update({
+    const shoot = await this.prisma.shoot.update({
       where: { id },
       data: {
         title: dto.title,
@@ -129,6 +141,20 @@ export class ProductionService {
       },
       include: { presenter: STAFF_BRIEF, secretary: STAFF_BRIEF },
     });
+    // Only whoever was newly put on the shoot.
+    const newlyOn = [
+      shoot.presenterId !== existing.presenterId ? shoot.presenterId : null,
+      shoot.secretaryId !== existing.secretaryId ? shoot.secretaryId : null,
+    ];
+    if (newlyOn.some(Boolean)) {
+      this.alerts?.shootAssigned(
+        shoot.title,
+        newlyOn,
+        actorStaffId,
+        shoot.scheduledFor,
+      );
+    }
+    return shoot;
   }
 
   async setShootStage(id: string, stage: ShootStage) {

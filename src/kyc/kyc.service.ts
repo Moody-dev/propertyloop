@@ -1,16 +1,18 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { KycStatus, Role } from '../../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationType } from '../notifications/notification-types';
 import { SubmitKycDto } from './dto/submit-kyc.dto';
 import { ReviewKycDto } from './dto/review-kyc.dto';
+import { StaffAlertsService } from '../staff-alerts/staff-alerts.service';
 
 @Injectable()
 export class KycService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
+    @Optional() private readonly alerts?: StaffAlertsService,
   ) {}
 
   // ─── User ─────────────────────────────────────────────────────────────────
@@ -28,11 +30,13 @@ export class KycService {
       reviewedById: null,
       reviewedAt: null,
     };
-    return this.prisma.kycSubmission.upsert({
+    const submission = await this.prisma.kycSubmission.upsert({
       where: { userId },
       create: { userId, ...data },
       update: { ...data, submittedAt: new Date() },
     });
+    this.alerts?.kycSubmitted(dto.fullName);
+    return submission;
   }
 
   async getMine(userId: string) {
@@ -103,7 +107,8 @@ export class KycService {
       title: approved ? 'Identity verified' : 'Verification needs attention',
       body: approved
         ? 'Your identity has been verified.'
-        : dto.rejectionReason || 'Your verification was not approved. Please resubmit.',
+        : dto.rejectionReason ||
+          'Your verification was not approved. Please resubmit.',
       data: { kycId: id },
     });
 

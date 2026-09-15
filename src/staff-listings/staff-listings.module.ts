@@ -6,9 +6,17 @@ import { AuthModule } from '../auth/auth.module';
 import { StaffModule } from '../staff/staff.module';
 import { StorageModule } from '../storage/storage.module';
 import { MediaModule } from '../media/media.module';
+import { StaffAlertsModule } from '../staff-alerts/staff-alerts.module';
 
 @Module({
-  imports: [PrismaModule, AuthModule, StaffModule, StorageModule, MediaModule],
+  imports: [
+    StaffAlertsModule,
+    PrismaModule,
+    AuthModule,
+    StaffModule,
+    StorageModule,
+    MediaModule,
+  ],
   controllers: [StaffListingsController],
   providers: [StaffListingsService],
   exports: [StaffListingsService],

@@ -5,9 +5,16 @@ import { PrismaModule } from '../prisma/prisma.module';
 import { AuthModule } from '../auth/auth.module';
 import { PaymentsModule } from '../payments/payments.module';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { StaffAlertsModule } from '../staff-alerts/staff-alerts.module';
 
 @Module({
-  imports: [PrismaModule, AuthModule, PaymentsModule, NotificationsModule],
+  imports: [
+    StaffAlertsModule,
+    PrismaModule,
+    AuthModule,
+    PaymentsModule,
+    NotificationsModule,
+  ],
   controllers: [VendorJobsController],
   providers: [VendorJobsService],
   exports: [VendorJobsService],
