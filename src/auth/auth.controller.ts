@@ -105,6 +105,12 @@ export class AuthController {
     return this.attachRefreshCookie(res, result, req);
   }
 
+  // The team portal sends this through its own Netlify site, so the refresh
+  // cookie is first-party there and Safari keeps it. That makes every staff
+  // member's refresh arrive from a handful of Netlify addresses. A refresh is
+  // useless without an unguessable token, so a generous per-IP limit costs no
+  // security and stops a busy morning tripping the 30/min default.
+  @Throttle({ default: { ttl: 60000, limit: 300 } })
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
   async refresh(
@@ -121,6 +127,8 @@ export class AuthController {
     return this.attachRefreshCookie(res, result, req);
   }
 
+  // Proxied the same way as refresh, and it needs a signed-in session anyway.
+  @Throttle({ default: { ttl: 60000, limit: 120 } })
   @UseGuards(JwtAuthGuard)
   @Post('logout')
   @HttpCode(HttpStatus.OK)
