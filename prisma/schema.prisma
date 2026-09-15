@@ -1901,6 +1901,8 @@ enum StaffRole {
   PROPERTY_LISTING
   MARKETING
   OPERATIONS
+  /// Runs the operations queue and the people working it.
+  OPERATIONS_MANAGER
   AMBASSADOR
   SECRETARY
 }

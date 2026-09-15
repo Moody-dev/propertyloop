@@ -73,25 +73,35 @@ export class TargetsController {
 
   @RequireStaff(StaffPermission.MANAGE_TARGETS)
   @Post()
-  create(@Body() dto: CreateTargetDto) {
-    return this.service.create(dto);
+  create(
+    @CurrentStaff() staff: CurrentStaffData,
+    @Body() dto: CreateTargetDto,
+  ) {
+    return this.service.create(staff, dto);
   }
 
   @RequireStaff(StaffPermission.MANAGE_TARGETS)
   @Post('roll-forward')
-  rollForward(@Body() dto: RollForwardDto) {
-    return this.service.rollForward(dto.from, dto.to);
+  rollForward(
+    @CurrentStaff() staff: CurrentStaffData,
+    @Body() dto: RollForwardDto,
+  ) {
+    return this.service.rollForward(staff, dto.from, dto.to);
   }
 
   @RequireStaff(StaffPermission.MANAGE_TARGETS)
   @Patch(':id')
-  update(@Param('id') id: string, @Body() dto: UpdateTargetDto) {
-    return this.service.update(id, dto);
+  update(
+    @CurrentStaff() staff: CurrentStaffData,
+    @Param('id') id: string,
+    @Body() dto: UpdateTargetDto,
+  ) {
+    return this.service.update(staff, id, dto);
   }
 
   @RequireStaff(StaffPermission.MANAGE_TARGETS)
   @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.service.remove(id);
+  remove(@CurrentStaff() staff: CurrentStaffData, @Param('id') id: string) {
+    return this.service.remove(staff, id);
   }
 }

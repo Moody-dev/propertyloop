@@ -69,6 +69,25 @@ export const DEFAULT_STAFF_PERMISSIONS: Record<StaffRole, StaffPermission[]> = {
     StaffPermission.MANAGE_PARTNERS,
   ],
 
+  // Jamiu. Runs the operations function: everything Operations & CRM can
+  // do, plus the oversight a manager needs — every daily log, every
+  // scorecard, targets for the people who report to them (TargetsService
+  // enforces that scope), and escrow disputes. Deliberately no money:
+  // payouts and partner commissions stay with the MD, and so does staff
+  // administration.
+  [StaffRole.OPERATIONS_MANAGER]: [
+    StaffPermission.MANAGE_LEADS,
+    StaffPermission.QUALIFY_LEAD,
+    StaffPermission.HANDLE_OPS,
+    StaffPermission.REVIEW_KYC,
+    StaffPermission.MANAGE_PROPERTIES,
+    StaffPermission.MANAGE_PARTNERS,
+    StaffPermission.VIEW_ALL_LOGS,
+    StaffPermission.VIEW_ALL_TARGETS,
+    StaffPermission.MANAGE_TARGETS,
+    StaffPermission.RESOLVE_DISPUTE,
+  ],
+
   // On camera. Needs to see what is being shot and nothing else.
   [StaffRole.AMBASSADOR]: [StaffPermission.MANAGE_CONTENT],
 

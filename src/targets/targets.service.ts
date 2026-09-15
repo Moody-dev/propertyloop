@@ -1,4 +1,9 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { CurrentStaffData } from '../staff/decorators/current-staff.decorator';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateTargetDto } from './dto/create-target.dto';
 import { UpdateTargetDto } from './dto/update-target.dto';
@@ -6,6 +11,7 @@ import {
   DealStage,
   StaffTarget,
   TargetProvenance,
+  StaffRole,
 } from '../../generated/prisma/client';
 
 /** YYYY-MM for the current month, Lagos time. */
@@ -47,6 +53,28 @@ export type MetricKey = (typeof METRIC_KEYS)[number];
 @Injectable()
 export class TargetsService {
   constructor(private readonly prisma: PrismaService) {}
+
+  /**
+   * Whether someone may set targets for a given person.
+   *
+   * The MD and GM run the whole scorecard. Anyone else holding
+   * MANAGE_TARGETS — the Operations Manager — sets them only for the people
+   * who report to them. The permission is for running a team, not for
+   * rewriting the number a colleague in another department is measured on.
+   */
+  private async assertMayManageFor(actor: CurrentStaffData, staffId: string) {
+    if (managesAllTargets(actor)) return;
+    const person = await this.prisma.staffProfile.findUnique({
+      where: { id: staffId },
+      select: { reportsToId: true },
+    });
+    if (!person) throw new NotFoundException('Staff member not found');
+    if (person.reportsToId !== actor.id) {
+      throw new ForbiddenException(
+        'You can only set targets for people who report to you',
+      );
+    }
+  }
 
   async list(period?: string) {
     const p = period ?? currentPeriod();
@@ -192,7 +220,8 @@ export class TargetsService {
     }
   }
 
-  async create(dto: CreateTargetDto) {
+  async create(actor: CurrentStaffData, dto: CreateTargetDto) {
+    await this.assertMayManageFor(actor, dto.staffId);
     return this.prisma.staffTarget.create({
       data: {
         staffId: dto.staffId,
@@ -212,11 +241,12 @@ export class TargetsService {
     });
   }
 
-  async update(id: string, dto: UpdateTargetDto) {
+  async update(actor: CurrentStaffData, id: string, dto: UpdateTargetDto) {
     const existing = await this.prisma.staffTarget.findUnique({
       where: { id },
     });
     if (!existing) throw new NotFoundException('Target not found');
+    await this.assertMayManageFor(actor, existing.staffId);
 
     return this.prisma.staffTarget.update({
       where: { id },
@@ -236,12 +266,13 @@ export class TargetsService {
     });
   }
 
-  async remove(id: string) {
+  async remove(actor: CurrentStaffData, id: string) {
     const existing = await this.prisma.staffTarget.findUnique({
       where: { id },
-      select: { id: true },
+      select: { id: true, staffId: true },
     });
     if (!existing) throw new NotFoundException('Target not found');
+    await this.assertMayManageFor(actor, existing.staffId);
     await this.prisma.staffTarget.delete({ where: { id } });
     return { deleted: true };
   }
@@ -252,7 +283,18 @@ export class TargetsService {
    * Without this, every month starts with an empty scorecard and somebody
    * retypes twenty rows — which is how targets quietly stop being set.
    */
-  async rollForward(fromPeriod: string, toPeriod: string) {
+  async rollForward(
+    actor: CurrentStaffData,
+    fromPeriod: string,
+    toPeriod: string,
+  ) {
+    // Copies every person's targets, so it belongs to whoever runs the
+    // whole scorecard.
+    if (!managesAllTargets(actor)) {
+      throw new ForbiddenException(
+        "Only the MD or GM can copy the whole team's targets into a new month",
+      );
+    }
     const source = await this.prisma.staffTarget.findMany({
       where: { period: fromPeriod },
     });
@@ -322,4 +364,11 @@ export class TargetsService {
       videosPublished,
     };
   }
+}
+
+/** The MD and GM set anyone's targets; other managers only their reports'. */
+export function managesAllTargets(staff: Pick<CurrentStaffData, 'staffRole'>) {
+  return (
+    staff.staffRole === StaffRole.MD_CEO || staff.staffRole === StaffRole.GM
+  );
 }
