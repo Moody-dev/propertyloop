@@ -6,10 +6,13 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { B2Service } from '../storage/b2.service';
 import { MediaUrlService } from '../media/media-url.service';
+import { cleanDescription } from '../common/utils/sanitize';
+import { assertNotObjectionable } from '../common/content-filter';
 import {
   DocumentType,
   ListingOwnership,
   ListingStatus,
+  ListingType,
   Prisma,
 } from '../../generated/prisma/client';
 import { CreateStaffListingDto } from './dto/create-staff-listing.dto';
@@ -25,8 +28,14 @@ import { UpdateStaffListingDto } from './dto/update-staff-listing.dto';
  * ListingsService remains the agent-facing view and is untouched.
  */
 
-/** Same ceiling the photo DTO enforces; a listing page with more is a gallery nobody scrolls. */
-const MAX_PHOTOS = 30;
+/** The same ceiling agents have: CreateListingDto accepts 20 images. */
+const MAX_PHOTOS = 20;
+
+/** Uploaded files and pasted links together, as agents' listings allow. */
+const MAX_VIDEOS = 10;
+
+/** What the agent form's document picker accepts. */
+const DOCUMENT_MIME = ['application/pdf', 'image/jpeg', 'image/png'];
 
 /** The four documents a property is expected to have. */
 const REQUIRED_DOCUMENTS: DocumentType[] = [
@@ -48,10 +57,46 @@ function priceLabel(naira: number): string {
   return `₦${Math.round(naira).toLocaleString('en-NG')}`;
 }
 
+/** The period suffix the website prints after a price, set as the agent form sets it. */
+function periodFor(type: ListingType): string | null {
+  if (type === ListingType.RENT) return '/year';
+  if (type === ListingType.SHORTLET) return '/night';
+  return null;
+}
+
+/** Guess a document's type from its file name, exactly as the agent form does. */
+function inferDocType(name: string): DocumentType {
+  const n = name.toLowerCase();
+  if (n.includes('survey')) return DocumentType.SURVEY_PLAN;
+  if (n.includes('permit')) return DocumentType.BUILDING_PERMIT;
+  if (n.includes('receipt')) return DocumentType.RECEIPT;
+  return DocumentType.C_OF_O;
+}
+
+/** A pasted link the website can embed — YouTube or Vimeo, as for agents. */
+function isVideoLink(url: string): boolean {
+  try {
+    const host = new URL(url).hostname.replace(/^www\./, '');
+    return /(^|\.)youtube\.com$|^youtu\.be$|(^|\.)vimeo\.com$/.test(host);
+  } catch {
+    return false;
+  }
+}
+
 const LISTING_SELECT = {
   id: true,
   title: true,
+  propertyType: true,
+  address: true,
   location: true,
+  beds: true,
+  baths: true,
+  sqft: true,
+  yearBuilt: true,
+  description: true,
+  features: true,
+  virtualTourUrl: true,
+  period: true,
   chapter: true,
   type: true,
   priceNaira: true,
@@ -68,7 +113,9 @@ const LISTING_SELECT = {
   ownership: true,
   createdAt: true,
   publishedAt: true,
-  documents: { select: { type: true, verified: true } },
+  documents: {
+    select: { id: true, type: true, name: true, url: true, verified: true },
+  },
   fromDeal: { select: { id: true, company: true } },
 } satisfies Prisma.ListingSelect;
 
@@ -116,6 +163,24 @@ export class StaffListingsService {
       publishedAt: listing.publishedAt,
       units: listing.units,
       unitsSold: listing.unitsSold,
+      // The agent form's fields, so the portal can edit what the website shows.
+      propertyType: listing.propertyType,
+      address: listing.address,
+      beds: listing.beds,
+      baths: listing.baths,
+      sqft: listing.sqft,
+      yearBuilt: listing.yearBuilt,
+      description: listing.description,
+      features: listing.features,
+      virtualTourUrl: listing.virtualTourUrl,
+      videoUrls: listing.videoUrls,
+      documentFiles: listing.documents.map((d) => ({
+        id: d.id,
+        type: d.type,
+        name: d.name,
+        url: d.url,
+        verified: d.verified,
+      })),
     };
   }
 
@@ -144,42 +209,51 @@ export class StaffListingsService {
   }
 
   async create(dto: CreateStaffListingDto, staffId: string, userId: string) {
+    // The checks an agent's listing goes through. House stock is published
+    // under PropertyLoop's own name, so it gets no less scrutiny.
+    assertNotObjectionable(dto.title, 'Listing title');
+    assertNotObjectionable(dto.description, 'Listing description');
+
     const slug = await this.uniqueSlug(dto.title);
+    const videoUrls = dto.videoUrls ?? [];
 
     const listing = await this.prisma.listing.create({
       data: {
+        // The public listing, as the website's agent form sends it.
         title: dto.title,
         slug,
-        location: dto.location,
-        address: dto.location,
-        chapter: dto.chapter,
         type: dto.type,
+        propertyType: dto.propertyType,
         priceNaira: BigInt(Math.round(dto.priceNaira)),
+        priceLabel: priceLabel(dto.priceNaira),
+        period: periodFor(dto.type) ?? undefined,
+        address: dto.address,
+        location: dto.location,
+        beds: dto.beds,
+        baths: dto.baths,
+        sqft: dto.sqft?.trim() ?? '',
+        yearBuilt: dto.yearBuilt?.trim() || undefined,
+        description: cleanDescription(dto.description),
+        features: dto.features ?? [],
+        virtualTourUrl: dto.virtualTourUrl || undefined,
+        videoUrls,
+        videoUrl: videoUrls[0] ?? undefined,
+        // Photos, documents and video files follow once the listing exists.
+        coverImage: '',
+        images: [],
+        // What only the company records.
+        chapter: dto.chapter,
         units: dto.units ?? 1,
         fromDealId: dto.dealId ?? null,
-        // House stock, sourced by whoever posted it. Both matter: ownership is
-        // what makes it sellable by partners, sourcedByStaffId is what makes
-        // acquisition numbers attributable to a person.
+        // House stock, sourced by whoever posted it. Ownership is what makes it
+        // sellable by partners; sourcedByStaffId is what makes acquisition
+        // numbers attributable to a person.
         ownership: ListingOwnership.HOUSE,
         sourcedByStaffId: staffId,
         agentId: userId,
         // Staff-posted stock still goes through review — posting it is not the
         // same as vouching for it.
         status: ListingStatus.PENDING_REVIEW,
-        // Listing is shared with the public website, which requires fields the
-        // staff form does not ask for: a property arrives here as a mandate
-        // with a price and a unit count, and the photographs and room counts
-        // follow later. Defaulted rather than demanded, because refusing to
-        // record a signed mandate until somebody knows the bathroom count
-        // would lose the mandate. Nothing is public until review passes.
-        propertyType: dto.propertyType ?? 'Flat / Apartment',
-        priceLabel: priceLabel(dto.priceNaira),
-        beds: dto.beds ?? 0,
-        baths: dto.baths ?? 0,
-        sqft: '',
-        description: dto.description ?? '',
-        coverImage: '',
-        images: [],
         ...(dto.documentsPresent?.length && {
           documents: {
             create: dto.documentsPresent.map((type) => ({
@@ -208,6 +282,12 @@ export class StaffListingsService {
         `Cannot sell ${dto.unitsSold} of ${units} units`,
       );
     }
+    if (dto.title !== undefined) {
+      assertNotObjectionable(dto.title, 'Listing title');
+    }
+    if (dto.description !== undefined) {
+      assertNotObjectionable(dto.description, 'Listing description');
+    }
 
     const listing = await this.prisma.listing.update({
       where: { id },
@@ -222,6 +302,23 @@ export class StaffListingsService {
           priceNaira: BigInt(Math.round(dto.priceNaira)),
           priceLabel: priceLabel(dto.priceNaira),
         }),
+        propertyType: dto.propertyType,
+        address: dto.address,
+        beds: dto.beds,
+        baths: dto.baths,
+        sqft: dto.sqft?.trim(),
+        ...(dto.yearBuilt !== undefined && {
+          yearBuilt: dto.yearBuilt.trim() || null,
+        }),
+        ...(dto.description !== undefined && {
+          description: cleanDescription(dto.description),
+        }),
+        features: dto.features,
+        ...(dto.virtualTourUrl !== undefined && {
+          virtualTourUrl: dto.virtualTourUrl || null,
+        }),
+        // The price suffix follows the listing type, as on the agent form.
+        ...(dto.type !== undefined && { period: periodFor(dto.type) }),
         units: dto.units,
         unitsSold: dto.unitsSold,
         ...(dto.dealId !== undefined && { fromDealId: dto.dealId }),
@@ -271,15 +368,16 @@ export class StaffListingsService {
     });
     if (!listing) throw new NotFoundException('Property not found');
 
-    const doc = listing.documents.find((d) => d.type === type);
-    if (!doc) {
+    if (!listing.documents.some((d) => d.type === type)) {
       throw new BadRequestException(
         'That document has not been handed over yet, so there is nothing to verify',
       );
     }
 
-    await this.prisma.listingDocument.update({
-      where: { id: doc.id },
+    // Every file of that type: a survey plan scanned as two pages is still one
+    // document, and verifying it must not leave half of it unchecked.
+    await this.prisma.listingDocument.updateMany({
+      where: { listingId: id, type },
       data: { verified },
     });
 
@@ -376,6 +474,150 @@ export class StaffListingsService {
       select: LISTING_SELECT,
     });
     return this.shape(updated);
+  }
+
+  /**
+   * Attach one document file — PDF, JPG or PNG, as the agent form accepts.
+   *
+   * The type is taken as given, or guessed from the file name the way the
+   * agent form guesses it. Several files of one type are allowed; a survey plan
+   * often arrives as more than one scan. A new file starts unverified, so the
+   * listing's verified flag is re-derived.
+   */
+  async addDocument(
+    id: string,
+    file: { mimetype?: string; originalname?: string } | undefined,
+    type?: string,
+  ) {
+    if (!file) throw new BadRequestException('No file provided');
+    if (!DOCUMENT_MIME.includes(file.mimetype ?? '')) {
+      throw new BadRequestException('Documents must be PDF, JPG or PNG');
+    }
+    const listing = await this.prisma.listing.findUnique({
+      where: { id },
+      select: { id: true },
+    });
+    if (!listing) throw new NotFoundException('Property not found');
+
+    const docType = Object.values(DocumentType).includes(type as DocumentType)
+      ? (type as DocumentType)
+      : inferDocType(file.originalname ?? '');
+
+    const { fileUrl } = await this.storage.uploadFile(file, 'listing-docs');
+    await this.prisma.listingDocument.create({
+      data: {
+        listingId: id,
+        type: docType,
+        name: (file.originalname || DOCUMENT_NAME[docType]).slice(0, 160),
+        url: fileUrl,
+        date: new Date().toLocaleDateString('en-NG', {
+          month: 'short',
+          year: 'numeric',
+        }),
+      },
+    });
+    await this.refreshVerified(id);
+    return this.findOne(id);
+  }
+
+  async removeDocument(id: string, docId: string) {
+    const doc = await this.prisma.listingDocument.findUnique({
+      where: { id: docId },
+      select: { id: true, listingId: true },
+    });
+    if (!doc || doc.listingId !== id) {
+      throw new NotFoundException('Document not found');
+    }
+    await this.prisma.listingDocument.delete({ where: { id: docId } });
+    await this.refreshVerified(id);
+    return this.findOne(id);
+  }
+
+  /**
+   * Attach one video file — the agent form's 50MB cap. The first video on a
+   * listing becomes its main video, as with agents'.
+   */
+  async addVideo(id: string, file: { mimetype?: string } | undefined) {
+    if (!file) throw new BadRequestException('No file provided');
+    if (!file.mimetype?.startsWith('video/')) {
+      throw new BadRequestException('Please choose a video file');
+    }
+    const listing = await this.prisma.listing.findUnique({
+      where: { id },
+      select: { id: true, videoUrls: true, videoUrl: true },
+    });
+    if (!listing) throw new NotFoundException('Property not found');
+    if (listing.videoUrls.length >= MAX_VIDEOS) {
+      throw new BadRequestException(
+        `A property can have at most ${MAX_VIDEOS} videos`,
+      );
+    }
+
+    const { fileUrl } = await this.storage.uploadFile(file, 'listings-videos');
+    const updated = await this.prisma.listing.update({
+      where: { id },
+      data: {
+        videoUrls: [...listing.videoUrls, fileUrl],
+        ...(!listing.videoUrl && { videoUrl: fileUrl }),
+      },
+      select: LISTING_SELECT,
+    });
+    return this.shape(updated);
+  }
+
+  /**
+   * Reorder or remove videos, or add a pasted link.
+   *
+   * Accepts only videos already on this listing, or YouTube and Vimeo links —
+   * anything else would let an arbitrary file be embedded on a public page.
+   */
+  async setVideos(id: string, urls: string[]) {
+    const listing = await this.prisma.listing.findUnique({
+      where: { id },
+      select: { id: true, videoUrls: true },
+    });
+    if (!listing) throw new NotFoundException('Property not found');
+
+    const next: string[] = [];
+    for (const raw of urls) {
+      const url = raw.trim();
+      if (!listing.videoUrls.includes(url) && !isVideoLink(url)) {
+        throw new BadRequestException(
+          'Videos must be uploaded files on this property, or YouTube or Vimeo links',
+        );
+      }
+      if (!next.includes(url)) next.push(url);
+    }
+    if (next.length > MAX_VIDEOS) {
+      throw new BadRequestException(
+        `A property can have at most ${MAX_VIDEOS} videos`,
+      );
+    }
+
+    const updated = await this.prisma.listing.update({
+      where: { id },
+      data: { videoUrls: next, videoUrl: next[0] ?? null },
+      select: LISTING_SELECT,
+    });
+    return this.shape(updated);
+  }
+
+  /** verified is true only once all four document types are held and checked. */
+  private async refreshVerified(id: string) {
+    const docs = await this.prisma.listingDocument.findMany({
+      where: { listingId: id },
+      select: { type: true, verified: true },
+    });
+    await this.prisma.listing.update({
+      where: { id },
+      data: {
+        verified: REQUIRED_DOCUMENTS.every(
+          (t) =>
+            docs.some((d) => d.type === t) &&
+            docs.filter((d) => d.type === t).every((d) => d.verified),
+        ),
+      },
+    });
   }
 
   /**

@@ -64,6 +64,7 @@ export class ListingsService {
     };
 
     if (dto.type) where.type = dto.type;
+    if (dto.ownership) where.ownership = dto.ownership;
     if (dto.propertyType) where.propertyType = { equals: dto.propertyType, mode: 'insensitive' };
     if (dto.location) where.location = { contains: dto.location, mode: 'insensitive' };
     if (dto.minBeds != null) where.beds = { gte: Number(dto.minBeds) };

@@ -25,6 +25,7 @@ import {
 import { CreateStaffListingDto } from './dto/create-staff-listing.dto';
 import { UpdateStaffListingDto } from './dto/update-staff-listing.dto';
 import { SetListingPhotosDto } from './dto/set-listing-photos.dto';
+import { SetListingVideosDto } from './dto/set-listing-videos.dto';
 import {
   DocumentType,
   ListingStatus,
@@ -105,6 +106,39 @@ export class StaffListingsController {
   @Patch(':id/photos')
   setPhotos(@Param('id') id: string, @Body() dto: SetListingPhotosDto) {
     return this.service.setPhotos(id, dto.images);
+  }
+
+  /** One document per request — PDF, JPG or PNG, 10MB, as agents upload. */
+  @Post(':id/documents')
+  @UseInterceptors(
+    FileInterceptor('file', { limits: { fileSize: 10 * 1024 * 1024 } }),
+  )
+  addDocument(
+    @Param('id') id: string,
+    @UploadedFile() file: any,
+    @Body('type') type?: string,
+  ) {
+    return this.service.addDocument(id, file, type);
+  }
+
+  @Delete(':id/documents/:docId')
+  removeDocument(@Param('id') id: string, @Param('docId') docId: string) {
+    return this.service.removeDocument(id, docId);
+  }
+
+  /** One video per request — 50MB, the same cap agents have. */
+  @Post(':id/videos')
+  @UseInterceptors(
+    FileInterceptor('file', { limits: { fileSize: 50 * 1024 * 1024 } }),
+  )
+  addVideo(@Param('id') id: string, @UploadedFile() file: any) {
+    return this.service.addVideo(id, file);
+  }
+
+  /** Reorder or remove videos, or add a YouTube / Vimeo link. */
+  @Patch(':id/videos')
+  setVideos(@Param('id') id: string, @Body() dto: SetListingVideosDto) {
+    return this.service.setVideos(id, dto.videoUrls);
   }
 
   @Delete(':id')

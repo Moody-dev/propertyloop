@@ -8,6 +8,7 @@ import {
   Min,
 } from 'class-validator';
 import {
+  ListingOwnership,
   ListingStatus,
   ListingType,
 } from '../../../generated/prisma/client';
@@ -54,6 +55,11 @@ export class ListListingsDto {
   @Min(0)
   @IsOptional()
   minBaths?: number;
+
+  /** HOUSE is PropertyLoop's own stock — what the app's "PL stock" chip shows. */
+  @IsEnum(ListingOwnership)
+  @IsOptional()
+  ownership?: ListingOwnership;
 
   @IsEnum(ListingStatus)
   @IsOptional()
