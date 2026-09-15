@@ -25,6 +25,18 @@ import {
 import { StaffPermission } from '../../generated/prisma/client';
 import { StaffThrottle } from './staff-throttle';
 
+/**
+ * A staff profile id is a cuid, and the routes below only match one.
+ *
+ * Without the constraint, GET /staff/:id answers any single word after
+ * /staff — including /staff/leads and /staff/listings, which live in other
+ * controllers. Registration order cannot be relied on to prevent that: every
+ * module that imports StaffModule pulls this controller's routes in ahead of
+ * its own, so the staff portal got "Staff member not found" when it loaded
+ * leads and properties.
+ */
+const STAFF_ID = ':id(c[a-z0-9]{20,})';
+
 @StaffThrottle()
 @Controller('staff')
 export class StaffController {
@@ -75,7 +87,7 @@ export class StaffController {
 
   @UseGuards(JwtAuthGuard, StaffPermissionsGuard)
   @RequireStaff()
-  @Get(':id')
+  @Get(STAFF_ID)
   findOne(@Param('id') id: string) {
     return this.service.findOne(id);
   }
@@ -89,21 +101,21 @@ export class StaffController {
 
   @UseGuards(JwtAuthGuard, StaffPermissionsGuard)
   @RequireStaff(StaffPermission.MANAGE_STAFF)
-  @Patch(':id')
+  @Patch(STAFF_ID)
   update(@Param('id') id: string, @Body() dto: UpdateStaffDto) {
     return this.service.update(id, dto);
   }
 
   @UseGuards(JwtAuthGuard, StaffPermissionsGuard)
   @RequireStaff(StaffPermission.MANAGE_STAFF)
-  @Patch(':id/active')
+  @Patch(`${STAFF_ID}/active`)
   setActive(@Param('id') id: string, @Body() dto: SetStaffActiveDto) {
     return this.service.setActive(id, dto.active);
   }
 
   @UseGuards(JwtAuthGuard, StaffPermissionsGuard)
   @RequireStaff(StaffPermission.MANAGE_STAFF)
-  @Post(':id/reset-permissions')
+  @Post(`${STAFF_ID}/reset-permissions`)
   resetPermissions(@Param('id') id: string) {
     return this.service.resetPermissions(id);
   }
