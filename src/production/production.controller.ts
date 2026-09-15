@@ -39,6 +39,12 @@ export class ProductionController {
     return this.service.listShoots(stage);
   }
 
+  /** What a shoot can be for. See ProductionService.listPropertyOptions. */
+  @Get('properties')
+  listPropertyOptions() {
+    return this.service.listPropertyOptions();
+  }
+
   @Post('shoots')
   createShoot(@Body() dto: CreateShootDto) {
     return this.service.createShoot(dto);

@@ -4,7 +4,12 @@ import { CreateShootDto } from './dto/create-shoot.dto';
 import { UpdateShootDto } from './dto/update-shoot.dto';
 import { CreateContentDto } from './dto/create-content.dto';
 import { UpdateContentDto } from './dto/update-content.dto';
-import { Prisma, ShootStage } from '../../generated/prisma/client';
+import {
+  ListingOwnership,
+  ListingStatus,
+  Prisma,
+  ShootStage,
+} from '../../generated/prisma/client';
 
 const ONE_DAY_MS = 86_400_000;
 
@@ -20,6 +25,27 @@ const STAFF_BRIEF = {
 @Injectable()
 export class ProductionService {
   constructor(private readonly prisma: PrismaService) {}
+
+  /**
+   * PropertyLoop stock a shoot can be for: id, title and where it is.
+   *
+   * Content staff do not hold MANAGE_PROPERTIES, so they cannot read the
+   * property list the rest of the portal uses — without this their shoot form
+   * had nothing to pick, and their shoot cards could not name the property.
+   * Unpublished stock is included on purpose: a property is usually filmed
+   * before it goes live, because the video is part of what publishing needs.
+   */
+  async listPropertyOptions() {
+    return this.prisma.listing.findMany({
+      where: {
+        ownership: ListingOwnership.HOUSE,
+        status: { not: ListingStatus.ARCHIVED },
+      },
+      select: { id: true, title: true, location: true },
+      orderBy: { createdAt: 'desc' },
+      take: 500,
+    });
+  }
 
   /* ─── Shoots ─────────────────────────────────────────────────────────── */
 
