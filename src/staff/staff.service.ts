@@ -145,6 +145,38 @@ export class StaffService {
     return { staff, temporaryPassword };
   }
 
+  /**
+   * Issue a new temporary password for someone who cannot sign in.
+   *
+   * Like provision, the password is returned once and only its hash is kept.
+   * Every existing session is ended too: if the reason for the reset is a
+   * password that leaked, a device still signed in with it must not stay in.
+   */
+  async resetPassword(id: string) {
+    const staff = await this.findOne(id);
+
+    const temporaryPassword = generatePassword();
+    const passwordHash = await bcrypt.hash(temporaryPassword, 12);
+    const now = new Date();
+
+    await this.prisma.$transaction([
+      this.prisma.user.update({
+        where: { id: staff.userId },
+        data: { passwordHash },
+      }),
+      this.prisma.refreshToken.updateMany({
+        where: { userId: staff.userId, revokedAt: null },
+        data: { revokedAt: now },
+      }),
+      this.prisma.session.updateMany({
+        where: { userId: staff.userId, revokedAt: null },
+        data: { revokedAt: now },
+      }),
+    ]);
+
+    return { staff, temporaryPassword };
+  }
+
   async update(id: string, dto: UpdateStaffDto) {
     const current = await this.findOne(id);
 

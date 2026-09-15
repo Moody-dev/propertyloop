@@ -18,16 +18,22 @@ export function accountRole(staffRole: StaffRole): Role {
 }
 
 /**
- * A temporary password that survives being read aloud down a bad line.
- * No 0/O or 1/l/I, and grouped, because a mistyped temporary password looks
- * exactly like a server problem to the person trying to sign in.
+ * A temporary password that survives being printed, read aloud, and typed on
+ * a phone.
+ *
+ * Small letters and digits only. Mixed case was the problem: C/c, S/s, V/v,
+ * X/x and friends are near-identical on paper, so a password printed as
+ * "xVcs2" gets typed with one letter in the wrong case and is rejected with
+ * nothing on screen to explain why. No i/l/o/0/1 either, and no symbol that
+ * needs the second keyboard page. Grouped with hyphens for reading; 31
+ * characters over 14 places is still ~69 bits.
  */
 export function generatePassword(): string {
-  const alphabet = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
+  const alphabet = 'abcdefghjkmnpqrstuvwxyz23456789';
   const block = (n: number) =>
     Array.from(
       { length: n },
       () => alphabet[crypto.randomInt(alphabet.length)],
     ).join('');
-  return `${block(5)}-${block(5)}-${block(4)}#`;
+  return `${block(5)}-${block(5)}-${block(4)}`;
 }

@@ -119,4 +119,15 @@ export class StaffController {
   resetPermissions(@Param('id') id: string) {
     return this.service.resetPermissions(id);
   }
+
+  /**
+   * A new temporary password for someone locked out, returned once. Signs
+   * them out everywhere — see StaffService.resetPassword.
+   */
+  @UseGuards(JwtAuthGuard, StaffPermissionsGuard)
+  @RequireStaff(StaffPermission.MANAGE_STAFF)
+  @Post(`${STAFF_ID}/reset-password`)
+  resetPassword(@Param('id') id: string) {
+    return this.service.resetPassword(id);
+  }
 }

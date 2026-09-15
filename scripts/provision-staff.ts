@@ -26,7 +26,6 @@
  */
 import 'dotenv/config';
 import * as bcrypt from 'bcrypt';
-import * as crypto from 'crypto';
 import * as fs from 'fs';
 import { PrismaPg } from '@prisma/adapter-pg';
 import {
@@ -37,6 +36,9 @@ import {
   StaffRole,
 } from '../generated/prisma/client';
 import { DEFAULT_STAFF_PERMISSIONS } from '../src/staff/staff-permissions';
+// The same generator as the portal's Add position and Reset password, so a
+// password from either route looks and types the same.
+import { generatePassword } from '../src/staff/staff-accounts';
 
 interface RosterEntry {
   name: string;
@@ -104,24 +106,6 @@ function accountRole(staffRole: StaffRole): Role {
   return staffRole === StaffRole.MD_CEO || staffRole === StaffRole.GM
     ? Role.ADMIN
     : Role.BUYER;
-}
-
-/**
- * A password that survives being read aloud down a bad phone line.
- *
- * No 0/O, 1/l/I. Grouped into blocks because an unbroken 16-character string
- * gets mistyped, and a mistyped temporary password looks exactly like a
- * server problem to the person trying to sign in.
- */
-function generatePassword(): string {
-  const alphabet = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
-  const block = (n: number) =>
-    Array.from(
-      { length: n },
-      () => alphabet[crypto.randomInt(alphabet.length)],
-    ).join('');
-  // A symbol keeps it clear of any "letters and numbers only" complaint.
-  return `${block(5)}-${block(5)}-${block(4)}#`;
 }
 
 /**
