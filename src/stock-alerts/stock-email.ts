@@ -10,7 +10,10 @@ export const SITE_URL = (
   process.env.FRONTEND_URL ?? 'https://propertyloop.ng'
 ).replace(/\/$/, '');
 
-export const COMMISSION_PERCENT = 2.5;
+/**
+ * No rate is quoted in these emails. Commission on an introduction is agreed
+ * per property, so printing one number would be a promise nobody made.
+ */
 
 const LOGO_URL =
   'https://image2url.com/r2/default/images/1774405533651-13ef5a22-bfcb-4d8e-801e-563f4451c8b0.png';
@@ -166,7 +169,7 @@ export function buildNewStockEmail(
   property: StockProperty,
 ): { subject: string; html: string; text: string } {
   const who = firstName(name);
-  const subject = `New PropertyLoop stock in ${property.location} — earn ${COMMISSION_PERCENT}% on an introduction`;
+  const subject = `New PropertyLoop stock in ${property.location} — earn commission on an introduction`;
 
   const html = shell(
     subject,
@@ -175,7 +178,8 @@ export function buildNewStockEmail(
       <p class="body-text">
         We have just listed a new property under PropertyLoop's own stock. You do
         not need the mandate and you do not need to own the listing — introduce a
-        buyer who closes and you earn <strong>${COMMISSION_PERCENT}% commission</strong>.
+        buyer who closes and you earn <strong>commission on the sale</strong>,
+        agreed with you on the property.
       </p>
       <div class="section-label">The property</div>
       ${propertyCard(property)}
@@ -184,7 +188,7 @@ export function buildNewStockEmail(
         <li>Open <strong>PL stock</strong> in the app, or PropertyLoop stock in your agent dashboard.</li>
         <li>Share the property with a buyer you already know.</li>
         <li>Log the introduction before the viewing, so the buyer is attributed to you.</li>
-        <li>When the sale closes, your ${COMMISSION_PERCENT}% is recorded against your name.</li>
+        <li>When the sale closes, your commission is recorded against your name.</li>
       </ol>
       <p>
         <a class="btn" href="${SITE_URL}/property/${property.id}">View the property</a>
@@ -201,7 +205,7 @@ export function buildNewStockEmail(
   const text = [
     `Hi ${who},`,
     '',
-    `We have just listed a new property under PropertyLoop's own stock. Introduce a buyer who closes and you earn ${COMMISSION_PERCENT}% commission — you do not need the mandate.`,
+    `We have just listed a new property under PropertyLoop's own stock. Introduce a buyer who closes and you earn commission on the sale, agreed with you on the property — you do not need the mandate.`,
     '',
     propertyLines(property),
     '',
@@ -209,7 +213,7 @@ export function buildNewStockEmail(
     '1. Open PL stock in the app, or PropertyLoop stock in your agent dashboard.',
     '2. Share the property with a buyer you already know.',
     '3. Log the introduction before the viewing, so the buyer is attributed to you.',
-    `4. When the sale closes, your ${COMMISSION_PERCENT}% is recorded against your name.`,
+    '4. When the sale closes, your commission is recorded against your name.',
     '',
     `PL stock: ${SITE_URL}/agent-dashboard/stock`,
     `Partner programme: ${SITE_URL}/realtors/partners`,

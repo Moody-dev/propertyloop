@@ -9,7 +9,8 @@
  *
  * Usage:
  *   npx ts-node scripts/send-app-and-earning-announcement.ts --dry
- *   npx ts-node scripts/send-app-and-earning-announcement.ts --sample you@example.com
+ *   npx ts-node scripts/send-app-and-earning-announcement.ts --sample
+ *   npx ts-node scripts/send-app-and-earning-announcement.ts --sample someone@example.com
  *   npx ts-node scripts/send-app-and-earning-announcement.ts --send
  *   npx ts-node scripts/send-app-and-earning-announcement.ts --send --only=AGENT
  *
@@ -20,7 +21,6 @@ import { PrismaPg } from '@prisma/adapter-pg';
 import { Resend } from 'resend';
 import { PrismaClient, Role } from '../generated/prisma/client';
 import {
-  COMMISSION_PERCENT,
   SITE_URL,
   firstName,
   propertyCard,
@@ -30,6 +30,9 @@ import {
 import type { StockProperty } from '../src/stock-alerts/stock-email';
 
 const GAP_MS = 600;
+
+/** Where a preview goes when --sample names no address. */
+const DEFAULT_SAMPLE_TO = 'olaoluwaoyetibo@gmail.com';
 
 /* ─── The email ─────────────────────────────────────────────────────────── */
 
@@ -49,7 +52,8 @@ const APP_TEXT = [
 
 function agentEmail(name: string | null, property: StockProperty | null) {
   const who = firstName(name);
-  const subject = `Update the app — and a new way to earn ${COMMISSION_PERCENT}% on PropertyLoop stock`;
+  const subject =
+    'Update the app — and a new way to earn on PropertyLoop stock';
   const html = shell(
     subject,
     `
@@ -64,7 +68,8 @@ function agentEmail(name: string | null, property: StockProperty | null) {
       <p class="body-text">
         PropertyLoop now lists its own stock, and it is open to you. Introduce a
         buyer who closes on one of our properties and you earn
-        <strong>${COMMISSION_PERCENT}% commission</strong> — no mandate, no
+        <strong>commission on the sale</strong>, agreed with you on the
+        property — no mandate, no
         listing of your own, no fee to take part.
       </p>
       ${property ? `<div class="section-label">Live now</div>${propertyCard(property)}` : ''}
@@ -93,7 +98,7 @@ function agentEmail(name: string | null, property: StockProperty | null) {
     APP_TEXT,
     '',
     'Now, the earning.',
-    `PropertyLoop now lists its own stock, and it is open to you. Introduce a buyer who closes on one of our properties and you earn ${COMMISSION_PERCENT}% commission — no mandate, no listing of your own, no fee to take part.`,
+    'PropertyLoop now lists its own stock, and it is open to you. Introduce a buyer who closes on one of our properties and you earn commission on the sale, agreed with you on the property — no mandate, no listing of your own, no fee to take part.',
     ...(property ? ['', 'Live now:', propertyLines(property)] : []),
     '',
     `1. Register once at ${SITE_URL}/realtors/partners`,
@@ -124,7 +129,7 @@ function vendorEmail(name: string | null) {
       <div class="section-label">A way to earn</div>
       <p class="body-text">
         PropertyLoop now lists property of its own, and pays
-        <strong>${COMMISSION_PERCENT}% commission</strong> on an introduction
+        <strong>commission</strong> on an introduction
         that closes. If you know someone looking to buy, that introduction is
         worth money to you — registration is free and takes a minute.
       </p>
@@ -145,7 +150,7 @@ function vendorEmail(name: string | null) {
     '',
     APP_TEXT,
     '',
-    `PropertyLoop now lists property of its own, and pays ${COMMISSION_PERCENT}% commission on an introduction that closes. If you know someone looking to buy, that introduction is worth money to you — registration is free and takes a minute.`,
+    'PropertyLoop now lists property of its own, and pays commission on an introduction that closes. If you know someone looking to buy, that introduction is worth money to you — registration is free and takes a minute.',
     '',
     `How it works: ${SITE_URL}/realtors/partners`,
     '',
@@ -180,7 +185,7 @@ function buyerEmail(name: string | null, property: StockProperty | null) {
       </p>
       <p class="note">
         Know someone looking to buy? Our partner programme pays
-        ${COMMISSION_PERCENT}% commission on an introduction that closes —
+        commission on an introduction that closes —
         <a href="${SITE_URL}/realtors/partners">see how it works</a>.
       </p>
     `,
@@ -195,7 +200,7 @@ function buyerEmail(name: string | null, property: StockProperty | null) {
     "PropertyLoop stock is property we list ourselves, verified by our team rather than forwarded from an agent. You will find it under PL stock on the app's home screen.",
     ...(property ? ['', propertyLines(property)] : []),
     '',
-    `Know someone looking to buy? Our partner programme pays ${COMMISSION_PERCENT}% commission on an introduction that closes: ${SITE_URL}/realtors/partners`,
+    `Know someone looking to buy? Our partner programme pays commission on an introduction that closes: ${SITE_URL}/realtors/partners`,
     '',
     'You are receiving this because you have a PropertyLoop account. To stop emails like this, reply with the word UNSUBSCRIBE.',
   ].join('\n');
@@ -221,7 +226,9 @@ async function main() {
   const dry = args.includes('--dry');
   const send = args.includes('--send');
   const sampleFlag = args.indexOf('--sample');
-  const sampleTo = sampleFlag !== -1 ? args[sampleFlag + 1] : undefined;
+  // Previews go to Ola unless another address is given after --sample.
+  const sampleTo =
+    sampleFlag !== -1 ? (args[sampleFlag + 1] ?? DEFAULT_SAMPLE_TO) : undefined;
   const onlyArg = args.find((a) => a.startsWith('--only='));
   const only = onlyArg
     ? (onlyArg.split('=')[1].toUpperCase() as Role)
