@@ -7,10 +7,12 @@ import { StaffModule } from '../staff/staff.module';
 import { StorageModule } from '../storage/storage.module';
 import { MediaModule } from '../media/media.module';
 import { StaffAlertsModule } from '../staff-alerts/staff-alerts.module';
+import { StockAlertsModule } from '../stock-alerts/stock-alerts.module';
 
 @Module({
   imports: [
     StaffAlertsModule,
+    StockAlertsModule,
     PrismaModule,
     AuthModule,
     StaffModule,

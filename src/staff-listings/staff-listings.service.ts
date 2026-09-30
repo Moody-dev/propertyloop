@@ -19,6 +19,7 @@ import {
 import { CreateStaffListingDto } from './dto/create-staff-listing.dto';
 import { UpdateStaffListingDto } from './dto/update-staff-listing.dto';
 import { StaffAlertsService } from '../staff-alerts/staff-alerts.service';
+import { StockAlertsService } from '../stock-alerts/stock-alerts.service';
 
 /**
  * Properties as the staff portal sees them.
@@ -130,6 +131,7 @@ export class StaffListingsService {
     private readonly storage: B2Service,
     private readonly mediaUrl: MediaUrlService,
     @Optional() private readonly alerts?: StaffAlertsService,
+    @Optional() private readonly stockAlerts?: StockAlertsService,
   ) {}
 
   /**
@@ -350,6 +352,7 @@ export class StaffListingsService {
         status: true,
         title: true,
         sourcedByStaffId: true,
+        ownership: true,
       },
     });
     if (!existing) throw new NotFoundException('Property not found');
@@ -372,6 +375,15 @@ export class StaffListingsService {
         existing.sourcedByStaffId,
         actorStaffId,
       );
+      // Every agent hears about PropertyLoop's own stock the moment it goes
+      // live — but only the first time, so pausing and putting a listing
+      // back up does not email them again.
+      if (
+        !existing.publishedAt &&
+        existing.ownership === ListingOwnership.HOUSE
+      ) {
+        this.stockAlerts?.announcePublished(id);
+      }
     }
     return this.shape(listing);
   }
