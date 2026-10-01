@@ -111,8 +111,19 @@ async function main() {
   try {
     if (sampleTo) {
       const { subject, html, text } = greeting('Sample');
-      await resend.emails.send({ from, to: sampleTo, subject, html, text });
-      console.log(`Sample → ${sampleTo}`);
+      const res = await resend.emails.send({
+        from,
+        to: sampleTo,
+        subject,
+        html,
+        text,
+      });
+      // Resend reports API failures in the response rather than by throwing,
+      // so an unchecked send prints success for mail that was never accepted.
+      if (res.error) {
+        throw new Error(`${res.error.name}: ${res.error.message}`);
+      }
+      console.log(`Sample → ${sampleTo} (id ${res.data?.id})`);
       return;
     }
 
@@ -141,13 +152,18 @@ async function main() {
     for (const person of recipients) {
       const { subject, html, text } = greeting(person.name);
       try {
-        await resend.emails.send({
+        const res = await resend.emails.send({
           from,
           to: person.email,
           subject,
           html,
           text,
         });
+        // An unchecked send counts a rejection as a success, which is how a
+        // whole broadcast gets reported as delivered while nobody receives it.
+        if (res.error) {
+          throw new Error(`${res.error.name}: ${res.error.message}`);
+        }
         sent += 1;
         console.log(`✓ ${person.email}`);
       } catch (err) {
