@@ -19,6 +19,7 @@ import {
   Role,
 } from '../../generated/prisma/client';
 import { RegisterPartnerDto } from './dto/register-partner.dto';
+import { UpdatePartnerDto } from './dto/update-partner.dto';
 import { normalizePhone } from '../common/phone';
 import { StaffAlertsService } from '../staff-alerts/staff-alerts.service';
 
@@ -135,16 +136,17 @@ export class PartnersService {
           });
         }
       } else {
-        // No password is set here. The partner gets a set-password link by
-        // email, so nobody on staff ever handles their credentials.
-        const unusable = await bcrypt.hash(
-          crypto.randomBytes(32).toString('hex'),
-          10,
-        );
+        // The password they chose on the form, so they can sign in straight
+        // away and come back to edit their details. Without one the account
+        // gets an unusable random hash and they set a password through
+        // Forgot password — which is what the welcome email then tells them.
+        const passwordHash = dto.password
+          ? await bcrypt.hash(dto.password, 12)
+          : await bcrypt.hash(crypto.randomBytes(32).toString('hex'), 10);
         const created = await tx.user.create({
           data: {
             email,
-            passwordHash: unusable,
+            passwordHash,
             name: dto.fullName.trim(),
             role: Role.AGENT,
             phone,
@@ -205,6 +207,9 @@ export class PartnersService {
     // outage must not turn a successful signup into an error the partner
     // sees — they would simply register again and hit the duplicate guard.
     const gaps = partnerPayoutGaps(result);
+    // Somebody upgrading an existing account signs in with the password they
+    // already have; a new account signs in with the one just chosen.
+    const canSignIn = Boolean(dto.password) || Boolean(existingUser);
     this.mail
       .sendEmail({
         to: email,
@@ -215,6 +220,10 @@ export class PartnersService {
           `Your partner number is ${code}.`,
           `Your referral link: ${this.referralUrl(code)}`,
           ``,
+          canSignIn
+            ? `Sign in any time at ${this.siteUrl()}/login to edit your details, add your bank account and copy your referral link.`
+            : `Set a password at ${this.siteUrl()}/forgot-password (enter this email address), then sign in to edit your details and copy your referral link.`,
+          ``,
           ...(gaps.length
             ? [
                 `Before your first commission can be paid we still need: ${gaps.join(', ')}.`,
@@ -223,7 +232,12 @@ export class PartnersService {
             : []),
           `Questions? Reply to this email or message 0705 305 3040 on WhatsApp.`,
         ].join('\n'),
-        html: this.buildWelcomeEmail(dto.fullName.trim(), code, gaps),
+        html: this.buildWelcomeEmail(
+          dto.fullName.trim(),
+          code,
+          gaps,
+          canSignIn,
+        ),
       })
       .catch((err) =>
         console.error(
@@ -237,15 +251,43 @@ export class PartnersService {
       referralUrl: this.referralUrl(code),
       email,
       payoutReady: partnerPayoutReady(result),
+      /** Whether they can sign in right now, which decides what we tell them. */
+      canSignIn,
     };
+  }
+
+  private siteUrl(): string {
+    return (process.env.FRONTEND_URL ?? 'https://propertyloop.ng').replace(
+      /\/$/,
+      '',
+    );
   }
 
   private buildWelcomeEmail(
     name: string,
     code: string,
     gaps: string[],
+    canSignIn: boolean,
   ): string {
     const referral = this.referralUrl(code);
+    const site = this.siteUrl();
+    const signIn = canSignIn
+      ? `<p style="margin:0 0 20px;font-size:14px;line-height:1.6;color:#48544f;">
+           Your dashboard is where you edit your details, add your bank account
+           and copy your link whenever you need it.
+         </p>
+         <p style="margin:0 0 20px;">
+           <a href="${site}/login" style="display:inline-block;background:#1f6f43;
+              color:#ffffff;text-decoration:none;font-weight:600;font-size:15px;
+              padding:12px 24px;border-radius:8px;">Sign in to your dashboard</a>
+         </p>`
+      : `<p style="margin:0 0 20px;padding:12px 14px;background:#dff0e5;border-radius:10px;
+            font-size:14px;line-height:1.6;color:#0f4429;">
+           To reach your dashboard, set a password first:
+           <a href="${site}/forgot-password" style="color:#1f6f43;">${site.replace('https://', '')}/forgot-password</a>
+           — enter this email address, then sign in. From there you can edit your
+           details, add your bank account and copy your link.
+         </p>`;
     const outstanding = gaps.length
       ? `<p style="margin:0 0 16px;padding:12px 14px;background:#fbeed4;border-radius:10px;
             font-size:14px;color:#7a5514;">
@@ -281,6 +323,7 @@ export class PartnersService {
           </p>
           <p style="margin:0 0 20px;"><a href="${referral}"
              style="font-size:13px;color:#1f6f43;word-break:break-all;">${referral}</a></p>
+          ${signIn}
           ${outstanding}
           <p style="margin:0;font-size:13px;color:#7d8a84;">
             Questions? Reply to this email, or message us on WhatsApp at
@@ -321,6 +364,10 @@ export class PartnersService {
 
   async me(userId: string) {
     const partner = await this.requirePartner(userId);
+    const account = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { name: true, email: true, phone: true },
+    });
     const [introductions, commissions] = await Promise.all([
       this.prisma.lead.count({ where: { broughtByPartnerId: partner.id } }),
       this.prisma.partnerCommission.findMany({
@@ -336,6 +383,29 @@ export class PartnersService {
       referralUrl: this.referralUrl(partner.code),
       payoutReady: partnerPayoutReady(partner),
       payoutGaps: partnerPayoutGaps(partner),
+      /** Everything the partner may edit, as it stands — the form prefills from this. */
+      details: {
+        fullName: account?.name ?? '',
+        email: account?.email ?? '',
+        whatsapp: account?.phone ?? '',
+        experience: partner.experience,
+        agencyName: partner.agencyName,
+        operatingState: partner.operatingState,
+        passportPhotoUrl: partner.passportPhotoUrl,
+        bankCode: partner.bankCode,
+        bankName: partner.bankName,
+        accountNumber: partner.accountNumber,
+        accountName: partner.accountName,
+        nin: partner.nin,
+        tin: partner.tin,
+        payerId: partner.payerId,
+        dateOfBirth: partner.dateOfBirth
+          ? partner.dateOfBirth.toISOString().slice(0, 10)
+          : null,
+        residentialAddress: partner.residentialAddress,
+        residentialState: partner.residentialState,
+        rcNumber: partner.rcNumber,
+      },
       introductions,
       commissions: commissions.map((c) => ({
         id: c.id,
@@ -346,6 +416,75 @@ export class PartnersService {
         paidAt: c.paidAt,
       })),
     };
+  }
+
+  /**
+   * A partner editing their own details.
+   *
+   * The reason this exists: most people register without their bank account
+   * to hand, and until now there was no way back in to add it — the payout
+   * gaps on their dashboard named what was missing with nowhere to put it.
+   *
+   * Only the fields sent are written. Email is not among them: it is the
+   * login, and changing it here would quietly lock somebody out.
+   */
+  async updateMe(userId: string, dto: UpdatePartnerDto) {
+    const partner = await this.requirePartner(userId);
+
+    const name = dto.fullName?.trim();
+    const phone = dto.whatsapp
+      ? (normalizePhone(dto.whatsapp) ?? dto.whatsapp.trim())
+      : undefined;
+    if (name || phone) {
+      await this.prisma.user.update({
+        where: { id: userId },
+        data: { ...(name && { name }), ...(phone && { phone }) },
+      });
+    }
+
+    const text = (value?: string) =>
+      value === undefined ? undefined : value.trim() || null;
+
+    await this.prisma.agentPartner.update({
+      where: { id: partner.id },
+      data: {
+        ...(dto.experience !== undefined && { experience: dto.experience }),
+        ...(dto.agencyName !== undefined && {
+          agencyName: text(dto.agencyName),
+        }),
+        ...(dto.operatingState !== undefined && {
+          operatingState: text(dto.operatingState),
+        }),
+        ...(dto.passportPhotoUrl !== undefined && {
+          passportPhotoUrl: text(dto.passportPhotoUrl),
+        }),
+        ...(dto.bankCode !== undefined && { bankCode: text(dto.bankCode) }),
+        ...(dto.bankName !== undefined && { bankName: text(dto.bankName) }),
+        ...(dto.accountNumber !== undefined && {
+          accountNumber: text(dto.accountNumber),
+        }),
+        ...(dto.accountName !== undefined && {
+          accountName: text(dto.accountName),
+        }),
+        ...(dto.nin !== undefined && { nin: text(dto.nin) }),
+        ...(dto.tin !== undefined && { tin: text(dto.tin) }),
+        ...(dto.payerId !== undefined && { payerId: text(dto.payerId) }),
+        ...(dto.dateOfBirth !== undefined && {
+          dateOfBirth: dto.dateOfBirth ? new Date(dto.dateOfBirth) : null,
+        }),
+        ...(dto.residentialAddress !== undefined && {
+          residentialAddress: text(dto.residentialAddress),
+        }),
+        ...(dto.residentialState !== undefined && {
+          residentialState: text(dto.residentialState),
+        }),
+        ...(dto.rcNumber !== undefined && { rcNumber: text(dto.rcNumber) }),
+      },
+    });
+
+    // The whole record back, so the dashboard shows the new payout gaps
+    // without a second request.
+    return this.me(userId);
   }
 
   /**

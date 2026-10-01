@@ -4,6 +4,7 @@ import {
   DefaultValuePipe,
   Get,
   Param,
+  Patch,
   ParseIntPipe,
   Post,
   Query,
@@ -13,6 +14,7 @@ import { Throttle } from '@nestjs/throttler';
 import { PartnersService } from './partners.service';
 import { RegisterPartnerDto } from './dto/register-partner.dto';
 import { IntroduceBuyerDto } from './dto/introduce-buyer.dto';
+import { UpdatePartnerDto } from './dto/update-partner.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import {
   CurrentUser,
@@ -50,6 +52,16 @@ export class PartnersController {
   @Get('me')
   me(@CurrentUser() user: CurrentUserData) {
     return this.service.me(user.id);
+  }
+
+  /** The partner editing their own details — bank account, NIN, address. */
+  @UseGuards(JwtAuthGuard)
+  @Patch('me')
+  updateMe(
+    @CurrentUser() user: CurrentUserData,
+    @Body() dto: UpdatePartnerDto,
+  ) {
+    return this.service.updateMe(user.id, dto);
   }
 
   /** House inventory the partner may sell. */

@@ -1,5 +1,6 @@
 import { Type } from 'class-transformer';
 import {
+  MinLength,
   IsBoolean,
   IsDateString,
   IsEmail,
@@ -61,6 +62,19 @@ export class RegisterPartnerDto {
   @IsBoolean()
   @Type(() => Boolean)
   consentedToTerms: boolean;
+
+  /**
+   * The password they will sign in with. Optional only because somebody
+   * who already has a PropertyLoop account keeps the one they have — a
+   * registration cannot change an existing account's password.
+   */
+  @IsOptional()
+  @IsString()
+  @MinLength(8, { message: 'Use at least 8 characters' })
+  @Matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).+$/, {
+    message: 'Include a capital letter, a small letter and a number',
+  })
+  password?: string;
 
   // ─── Payout, all optional ──────────────────────────────────────────────
 
