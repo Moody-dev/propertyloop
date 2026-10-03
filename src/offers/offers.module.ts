@@ -4,9 +4,10 @@ import { OffersController } from './offers.controller';
 import { PrismaModule } from '../prisma/prisma.module';
 import { AuthModule } from '../auth/auth.module';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { StockAlertsModule } from '../stock-alerts/stock-alerts.module';
 
 @Module({
-  imports: [PrismaModule, AuthModule, NotificationsModule],
+  imports: [PrismaModule, AuthModule, NotificationsModule, StockAlertsModule],
   controllers: [OffersController],
   providers: [OffersService],
   exports: [OffersService],

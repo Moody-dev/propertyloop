@@ -7,11 +7,7 @@ import {
 import { cleanDescription } from '../common/utils/sanitize';
 import { assertNotObjectionable } from '../common/content-filter';
 import { PrismaService } from '../prisma/prisma.service';
-import {
-  ListingStatus,
-  Prisma,
-  Role,
-} from '../../generated/prisma/client';
+import { ListingStatus, Prisma, Role } from '../../generated/prisma/client';
 
 import { CreateListingDto } from './dto/create-listing.dto';
 import { UpdateListingDto } from './dto/update-listing.dto';
@@ -37,7 +33,10 @@ export class ListingsService {
    * under its own key, so the stored URLs stay valid either way. At worst an
    * iPhone photo shows the fallback for the few seconds the decode takes.
    */
-  private normalizeUploadedImages(listing: { coverImage?: string | null; images?: string[] }) {
+  private normalizeUploadedImages(listing: {
+    coverImage?: string | null;
+    images?: string[];
+  }) {
     void this.b2
       .normalizeHeicObjects([listing.coverImage, ...(listing.images ?? [])])
       .catch((err) =>
@@ -65,8 +64,10 @@ export class ListingsService {
 
     if (dto.type) where.type = dto.type;
     if (dto.ownership) where.ownership = dto.ownership;
-    if (dto.propertyType) where.propertyType = { equals: dto.propertyType, mode: 'insensitive' };
-    if (dto.location) where.location = { contains: dto.location, mode: 'insensitive' };
+    if (dto.propertyType)
+      where.propertyType = { equals: dto.propertyType, mode: 'insensitive' };
+    if (dto.location)
+      where.location = { contains: dto.location, mode: 'insensitive' };
     if (dto.minBeds != null) where.beds = { gte: Number(dto.minBeds) };
     if (dto.minBaths != null) where.baths = { gte: Number(dto.minBaths) };
     if (dto.minPrice != null || dto.maxPrice != null) {
@@ -352,7 +353,8 @@ export class ListingsService {
     if (dto.features !== undefined) data.features = dto.features;
     if (dto.coverImage !== undefined) data.coverImage = dto.coverImage;
     if (dto.images !== undefined) data.images = dto.images;
-    if (dto.virtualTourUrl !== undefined) data.virtualTourUrl = dto.virtualTourUrl;
+    if (dto.virtualTourUrl !== undefined)
+      data.virtualTourUrl = dto.virtualTourUrl;
     if (dto.videoUrl !== undefined) data.videoUrl = dto.videoUrl;
     if (dto.videoUrls !== undefined) data.videoUrls = dto.videoUrls;
     if (dto.featured !== undefined) data.featured = dto.featured;
@@ -419,7 +421,12 @@ export class ListingsService {
         name: dto.name,
         type: dto.type,
         url: dto.url,
-        date: dto.date ?? new Date().toLocaleDateString('en-NG', { month: 'short', year: 'numeric' }),
+        date:
+          dto.date ??
+          new Date().toLocaleDateString('en-NG', {
+            month: 'short',
+            year: 'numeric',
+          }),
       },
     });
   }
@@ -561,7 +568,8 @@ export class ListingsService {
     const typeCounts: Record<string, number> = {};
     let totalPrice = 0;
     for (const listing of allListings) {
-      typeCounts[listing.propertyType] = (typeCounts[listing.propertyType] ?? 0) + 1;
+      typeCounts[listing.propertyType] =
+        (typeCounts[listing.propertyType] ?? 0) + 1;
       totalPrice += Number(listing.priceNaira);
     }
 
@@ -587,7 +595,9 @@ export class ListingsService {
   // ─── Price History ────────────────────────────────────────────────────────
 
   async getPriceHistory(listingId: string) {
-    const listing = await this.prisma.listing.findUnique({ where: { id: listingId } });
+    const listing = await this.prisma.listing.findUnique({
+      where: { id: listingId },
+    });
     if (!listing) throw new NotFoundException('Listing not found');
     return this.prisma.listingPriceHistory.findMany({
       where: { listingId },
@@ -598,7 +608,9 @@ export class ListingsService {
   // ─── Logbook for a listing ───────────────────────────────────────────────
 
   async getLogbookEntries(listingId: string) {
-    const listing = await this.prisma.listing.findUnique({ where: { id: listingId } });
+    const listing = await this.prisma.listing.findUnique({
+      where: { id: listingId },
+    });
     if (!listing) throw new NotFoundException('Listing not found');
     return this.prisma.logbookEntry.findMany({
       where: { listingId },
@@ -644,15 +656,17 @@ export class ListingsService {
     });
   }
 
-  async removeLogbookEntry(agentId: string, listingId: string, entryId: string) {
+  async removeLogbookEntry(
+    agentId: string,
+    listingId: string,
+    entryId: string,
+  ) {
     const listing = await this.prisma.listing.findUnique({
       where: { id: listingId },
     });
     if (!listing) throw new NotFoundException('Listing not found');
     if (listing.agentId !== agentId) {
-      throw new ForbiddenException(
-        'You can only modify your own listings',
-      );
+      throw new ForbiddenException('You can only modify your own listings');
     }
     const entry = await this.prisma.logbookEntry.findUnique({
       where: { id: entryId },
@@ -714,6 +728,9 @@ export class ListingsService {
       viewsCount: listing.viewsCount,
       featured: listing.featured,
       openToOffers: listing.openToOffers,
+      // HOUSE is PropertyLoop's own stock. The website shows it as ours
+      // rather than as the staff member who filed it.
+      ownership: listing.ownership,
       createdAt: listing.createdAt,
       updatedAt: listing.updatedAt,
       documents: listing.documents,

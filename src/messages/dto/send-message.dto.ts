@@ -1,4 +1,11 @@
-import { IsArray, IsOptional, IsString, IsUrl, MaxLength, ArrayMaxSize } from 'class-validator';
+import {
+  IsArray,
+  IsOptional,
+  IsString,
+  IsUrl,
+  MaxLength,
+  ArrayMaxSize,
+} from 'class-validator';
 
 export class SendMessageDto {
   @IsString()

@@ -13,7 +13,10 @@ import {
 import { MessagesService } from './messages.service';
 import { CreateConversationDto } from './dto/create-conversation.dto';
 import { SendMessageDto } from './dto/send-message.dto';
-import { ListConversationsDto, ListMessagesDto } from './dto/list-conversations.dto';
+import {
+  ListConversationsDto,
+  ListMessagesDto,
+} from './dto/list-conversations.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import {
   CurrentUser,

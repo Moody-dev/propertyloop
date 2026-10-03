@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import {
@@ -22,6 +23,7 @@ import { ListOffersDto } from './dto/list-offers.dto';
 import { UpdateStepDto } from './dto/update-step.dto';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationType } from '../notifications/notification-types';
+import { HouseEnquiryService } from '../stock-alerts/house-enquiry.service';
 
 // The standard 5-step purchase journey, seeded when an offer is accepted.
 // Step 1 is already done (the offer was just accepted); step 2 becomes active.
@@ -81,6 +83,8 @@ export class OffersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
+    // Optional so an existing unit test can build this with Prisma alone.
+    @Optional() private readonly houseEnquiry?: HouseEnquiryService,
   ) {}
 
   // ─── Buyer: create an offer ──────────────────────────────────────────────
@@ -92,10 +96,14 @@ export class OffersService {
     });
     if (!listing) throw new NotFoundException('Listing not found');
     if (listing.type !== ListingType.SALE) {
-      throw new BadRequestException('Offers can only be made on listings for sale');
+      throw new BadRequestException(
+        'Offers can only be made on listings for sale',
+      );
     }
     if (listing.agentId === buyerId) {
-      throw new BadRequestException('You cannot make an offer on your own listing');
+      throw new BadRequestException(
+        'You cannot make an offer on your own listing',
+      );
     }
 
     // One live offer per buyer per listing — block a duplicate while one is open.
@@ -138,6 +146,18 @@ export class OffersService {
         },
       },
       include: this.offerInclude(),
+    });
+
+    // House stock: the offer is the company's to answer, so it also lands
+    // in the portal as a lead carrying the amount.
+    this.houseEnquiry?.record({
+      listingId: listing.id,
+      kind: 'OFFER',
+      name: offer.buyer?.name ?? 'A buyer',
+      phone: offer.buyer?.phone,
+      message: dto.note,
+      buyerUserId: buyerId,
+      amountNaira: dto.amountNaira,
     });
 
     void this.notifications.notify({
@@ -356,7 +376,9 @@ export class OffersService {
       where: { id: offer.id },
       data: {
         status: OfferStatus.WITHDRAWN,
-        events: { create: { type: OfferEventType.WITHDRAW, actor: OfferActor.BUYER } },
+        events: {
+          create: { type: OfferEventType.WITHDRAW, actor: OfferActor.BUYER },
+        },
       },
       include: this.offerInclude(),
     });
@@ -424,7 +446,9 @@ export class OffersService {
           ...(dto.state !== undefined && { state: dto.state }),
           ...(dto.detail !== undefined && { detail: dto.detail }),
           ...(dto.eta !== undefined && { eta: dto.eta }),
-          ...(dto.state === PurchaseStepState.DONE && { completedAt: new Date() }),
+          ...(dto.state === PurchaseStepState.DONE && {
+            completedAt: new Date(),
+          }),
         },
       });
 
@@ -485,7 +509,9 @@ export class OffersService {
   }
 
   private async loadActiveOffer(offerId: string) {
-    const offer = await this.prisma.offer.findUnique({ where: { id: offerId } });
+    const offer = await this.prisma.offer.findUnique({
+      where: { id: offerId },
+    });
     if (!offer) throw new NotFoundException('Offer not found');
     if (
       offer.status !== OfferStatus.PENDING &&
@@ -568,7 +594,10 @@ export class OffersService {
       createdAt: purchase.createdAt,
       updatedAt: purchase.updatedAt,
       listing: purchase.listing
-        ? { ...purchase.listing, priceNaira: Number(purchase.listing.priceNaira) }
+        ? {
+            ...purchase.listing,
+            priceNaira: Number(purchase.listing.priceNaira),
+          }
         : undefined,
       buyer: purchase.buyer,
       agent: purchase.agent,

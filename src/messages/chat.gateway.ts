@@ -235,7 +235,11 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
    * A participant read the conversation — tell everyone else in the room so
    * open chat screens can flip sent ticks (✓) to read ticks (✓✓) instantly.
    */
-  broadcastMessagesRead(conversationId: string, readerUserId: string, readAt: Date) {
+  broadcastMessagesRead(
+    conversationId: string,
+    readerUserId: string,
+    readAt: Date,
+  ) {
     if (!this.server) return;
     this.server.to(`convo:${conversationId}`).emit('messages_read', {
       conversationId,

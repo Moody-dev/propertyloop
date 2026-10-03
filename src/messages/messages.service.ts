@@ -1,10 +1,11 @@
 import {
   BadRequestException,
   ForbiddenException,
-  forwardRef,
   Inject,
   Injectable,
   NotFoundException,
+  Optional,
+  forwardRef,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import {
@@ -14,9 +15,13 @@ import {
 } from '../../generated/prisma/client';
 import { CreateConversationDto } from './dto/create-conversation.dto';
 import { SendMessageDto } from './dto/send-message.dto';
-import { ListConversationsDto, ListMessagesDto } from './dto/list-conversations.dto';
+import {
+  ListConversationsDto,
+  ListMessagesDto,
+} from './dto/list-conversations.dto';
 import { ChatGateway } from './chat.gateway';
 import { assertNotObjectionable } from '../common/content-filter';
+import { HouseEnquiryService } from '../stock-alerts/house-enquiry.service';
 
 // Admin identities are masked behind the PropertyLoop brand when shown to
 // non-admin users so support/system messages appear to come from the
@@ -44,6 +49,8 @@ export class MessagesService {
     private readonly prisma: PrismaService,
     @Inject(forwardRef(() => ChatGateway))
     private readonly chatGateway: ChatGateway,
+    // Optional so an existing unit test can build this with Prisma alone.
+    @Optional() private readonly houseEnquiry?: HouseEnquiryService,
   ) {}
 
   // ─── List conversations for the current user ────────────────────────────
@@ -59,7 +66,9 @@ export class MessagesService {
       select: { conversationId: true, unreadCount: true },
     });
     const convoIds = participantRows.map((p) => p.conversationId);
-    const unreadMap = new Map(participantRows.map((p) => [p.conversationId, p.unreadCount]));
+    const unreadMap = new Map(
+      participantRows.map((p) => [p.conversationId, p.unreadCount]),
+    );
 
     if (convoIds.length === 0) {
       return { items: [], total: 0, page, limit, pages: 0 };
@@ -97,7 +106,13 @@ export class MessagesService {
           participants: {
             include: {
               user: {
-                select: { id: true, name: true, avatarUrl: true, phone: true, role: true },
+                select: {
+                  id: true,
+                  name: true,
+                  avatarUrl: true,
+                  phone: true,
+                  role: true,
+                },
               },
             },
           },
@@ -123,9 +138,7 @@ export class MessagesService {
         listingId: c.listingId,
         productId: c.productId,
         // The other person's info — admins are shown as PropertyLoop
-        name: otherIsAdmin
-          ? PROPERTYLOOP_NAME
-          : other?.user.name || 'Unknown',
+        name: otherIsAdmin ? PROPERTYLOOP_NAME : other?.user.name || 'Unknown',
         avatar: otherIsAdmin
           ? PROPERTYLOOP_AVATAR
           : other?.user.avatarUrl || null,
@@ -134,7 +147,8 @@ export class MessagesService {
         otherUserId: other?.userId || null,
         // Last message preview
         lastMessage: lastMsg?.text || '',
-        lastMessageAt: lastMsg?.createdAt?.toISOString() || c.updatedAt.toISOString(),
+        lastMessageAt:
+          lastMsg?.createdAt?.toISOString() || c.updatedAt.toISOString(),
         lastMessageIsYou: lastMsg?.senderUserId === userId,
         // Unread
         unread: unreadMap.get(c.id) || 0,
@@ -147,7 +161,11 @@ export class MessagesService {
 
   // ─── Get messages for a conversation ─────────────────────────────────────
 
-  async getMessages(userId: string, conversationId: string, dto: ListMessagesDto) {
+  async getMessages(
+    userId: string,
+    conversationId: string,
+    dto: ListMessagesDto,
+  ) {
     // Verify user is a participant
     await this.assertParticipant(userId, conversationId);
 
@@ -218,7 +236,11 @@ export class MessagesService {
 
   // ─── Send a message ──────────────────────────────────────────────────────
 
-  async sendMessage(userId: string, conversationId: string, dto: SendMessageDto) {
+  async sendMessage(
+    userId: string,
+    conversationId: string,
+    dto: SendMessageDto,
+  ) {
     await this.assertParticipant(userId, conversationId);
 
     if (!dto.text?.trim() && !dto.attachmentUrls?.length) {
@@ -259,7 +281,9 @@ export class MessagesService {
         attachmentUrls: dto.attachmentUrls ?? [],
       },
       include: {
-        sender: { select: { id: true, name: true, avatarUrl: true, role: true } },
+        sender: {
+          select: { id: true, name: true, avatarUrl: true, role: true },
+        },
       },
     });
 
@@ -307,7 +331,8 @@ export class MessagesService {
       select: { id: true, name: true, avatarUrl: true, phone: true },
     });
     if (!recipient) throw new NotFoundException('Recipient not found');
-    if (recipient.id === userId) throw new BadRequestException('Cannot message yourself');
+    if (recipient.id === userId)
+      throw new BadRequestException('Cannot message yourself');
     assertNotObjectionable(dto.text, 'Your message');
 
     const blocked = await this.prisma.blockedUser.findFirst({
@@ -323,10 +348,11 @@ export class MessagesService {
     }
 
     // Check if conversation already exists between these two users
-    const existingParticipants = await this.prisma.conversationParticipant.findMany({
-      where: { userId },
-      select: { conversationId: true },
-    });
+    const existingParticipants =
+      await this.prisma.conversationParticipant.findMany({
+        where: { userId },
+        select: { conversationId: true },
+      });
     const myConvoIds = existingParticipants.map((p) => p.conversationId);
 
     if (myConvoIds.length > 0) {
@@ -340,8 +366,11 @@ export class MessagesService {
       if (existing) {
         // Send the first message if provided
         if (dto.text) {
-          await this.sendMessage(userId, existing.conversationId, { text: dto.text });
+          await this.sendMessage(userId, existing.conversationId, {
+            text: dto.text,
+          });
         }
+        await this.noteHouseEnquiry(userId, dto.listingId, dto.text);
         return { conversationId: existing.conversationId, created: false };
       }
     }
@@ -362,7 +391,13 @@ export class MessagesService {
         participants: {
           include: {
             user: {
-              select: { id: true, name: true, avatarUrl: true, phone: true, role: true },
+              select: {
+                id: true,
+                name: true,
+                avatarUrl: true,
+                phone: true,
+                role: true,
+              },
             },
           },
         },
@@ -382,6 +417,7 @@ export class MessagesService {
       await this.sendMessage(userId, conversation.id, { text: dto.text });
     }
 
+    await this.noteHouseEnquiry(userId, dto.listingId, dto.text);
     return { conversationId: conversation.id, created: true };
   }
 
@@ -391,6 +427,32 @@ export class MessagesService {
    * admin server-side and reuse createOrFind so admins are masked behind the
    * PropertyLoop brand in the chat like any other admin conversation.
    */
+  /**
+   * A message about PropertyLoop's own stock is an enquiry the team has to
+   * answer, not a private chat with the staff member who filed the property.
+   * Does nothing for an agent's own listing, or a conversation about a product.
+   */
+  private async noteHouseEnquiry(
+    userId: string,
+    listingId?: string,
+    text?: string,
+  ) {
+    if (!listingId || !this.houseEnquiry) return;
+    const sender = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { name: true, phone: true, email: true },
+    });
+    this.houseEnquiry.record({
+      listingId,
+      kind: 'MESSAGE',
+      name: sender?.name ?? 'Someone',
+      phone: sender?.phone,
+      email: sender?.email,
+      message: text,
+      buyerUserId: userId,
+    });
+  }
+
   async startSupport(userId: string) {
     const me = await this.prisma.user.findUnique({
       where: { id: userId },
@@ -434,7 +496,7 @@ export class MessagesService {
     // instead of blank. Sent from the admin, so it's masked as PropertyLoop.
     if (result.created) {
       await this.sendMessage(admin.id, result.conversationId, {
-        text: "Hi 👋 Welcome to PropertyLoop support. Tell us what you need help with — you can attach a photo or document too. We usually reply within a few minutes.",
+        text: 'Hi 👋 Welcome to PropertyLoop support. Tell us what you need help with — you can attach a photo or document too. We usually reply within a few minutes.',
       });
     }
 
@@ -488,7 +550,9 @@ export class MessagesService {
       where: { OR: [{ blockerId: userId }, { blockedId: userId }] },
       select: { blockerId: true, blockedId: true },
     });
-    return rows.map((r) => (r.blockerId === userId ? r.blockedId : r.blockerId));
+    return rows.map((r) =>
+      r.blockerId === userId ? r.blockedId : r.blockerId,
+    );
   }
 
   // ─── Helpers ──────────────────────────────────────────────────────────────
@@ -498,7 +562,9 @@ export class MessagesService {
       where: { conversationId_userId: { conversationId, userId } },
     });
     if (!participant) {
-      throw new ForbiddenException('You are not a participant in this conversation');
+      throw new ForbiddenException(
+        'You are not a participant in this conversation',
+      );
     }
     return participant;
   }

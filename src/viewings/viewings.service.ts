@@ -3,6 +3,7 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma, ViewingStatus } from '../../generated/prisma/client';
@@ -11,12 +12,15 @@ import { UpdateViewingDto } from './dto/update-viewing.dto';
 import { ListViewingsDto } from './dto/list-viewings.dto';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationType } from '../notifications/notification-types';
+import { HouseEnquiryService } from '../stock-alerts/house-enquiry.service';
 
 @Injectable()
 export class ViewingsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
+    // Optional so an existing unit test can build this with Prisma alone.
+    @Optional() private readonly houseEnquiry?: HouseEnquiryService,
   ) {}
 
   async create(dto: CreateViewingDto, buyerUserId?: string) {
@@ -61,8 +65,22 @@ export class ViewingsService {
         notes: dto.notes,
       },
       include: {
-        listing: { select: { id: true, title: true, coverImage: true, location: true } },
+        listing: {
+          select: { id: true, title: true, coverImage: true, location: true },
+        },
       },
+    });
+
+    // On PropertyLoop's own stock the "agent" is the staff member who filed
+    // it, so the request also becomes a lead the team can see and work.
+    this.houseEnquiry?.record({
+      listingId: listing.id,
+      kind: 'VIEWING',
+      name: clientName,
+      phone: clientPhone,
+      email: clientEmail,
+      message: dto.notes,
+      buyerUserId,
     });
 
     // Ping the listing agent that a buyer wants a viewing.
@@ -94,7 +112,13 @@ export class ViewingsService {
         take: limit,
         include: {
           listing: {
-            select: { id: true, title: true, coverImage: true, location: true, slug: true },
+            select: {
+              id: true,
+              title: true,
+              coverImage: true,
+              location: true,
+              slug: true,
+            },
           },
         },
       }),
@@ -117,11 +141,15 @@ export class ViewingsService {
       where: { id: viewingId },
       data: {
         ...(dto.status !== undefined && { status: dto.status }),
-        ...(dto.scheduledFor !== undefined && { scheduledFor: dto.scheduledFor }),
+        ...(dto.scheduledFor !== undefined && {
+          scheduledFor: dto.scheduledFor,
+        }),
         ...(dto.notes !== undefined && { notes: dto.notes }),
       },
       include: {
-        listing: { select: { id: true, title: true, coverImage: true, location: true } },
+        listing: {
+          select: { id: true, title: true, coverImage: true, location: true },
+        },
       },
     });
 
@@ -129,7 +157,8 @@ export class ViewingsService {
     if (viewing.buyerUserId) {
       const title = updated.listing?.title ?? 'the property';
       const rescheduled =
-        dto.scheduledFor !== undefined && dto.status !== ViewingStatus.CANCELLED;
+        dto.scheduledFor !== undefined &&
+        dto.status !== ViewingStatus.CANCELLED;
       if (dto.status === ViewingStatus.CONFIRMED || rescheduled) {
         void this.notifications.notify({
           userId: viewing.buyerUserId,
@@ -175,7 +204,13 @@ export class ViewingsService {
         take: limit,
         include: {
           listing: {
-            select: { id: true, title: true, coverImage: true, location: true, slug: true },
+            select: {
+              id: true,
+              title: true,
+              coverImage: true,
+              location: true,
+              slug: true,
+            },
           },
           agent: {
             select: { id: true, name: true, phone: true, avatarUrl: true },
@@ -215,10 +250,22 @@ export class ViewingsService {
         take: limit,
         include: {
           listing: {
-            select: { id: true, title: true, coverImage: true, location: true, slug: true },
+            select: {
+              id: true,
+              title: true,
+              coverImage: true,
+              location: true,
+              slug: true,
+            },
           },
           agent: {
-            select: { id: true, name: true, email: true, avatarUrl: true, phone: true },
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              avatarUrl: true,
+              phone: true,
+            },
           },
         },
       }),
@@ -237,9 +284,17 @@ export class ViewingsService {
       where: { id: viewingId },
       data: { status },
       include: {
-        listing: { select: { id: true, title: true, coverImage: true, location: true } },
+        listing: {
+          select: { id: true, title: true, coverImage: true, location: true },
+        },
         agent: {
-          select: { id: true, name: true, email: true, avatarUrl: true, phone: true },
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            avatarUrl: true,
+            phone: true,
+          },
         },
       },
     });
@@ -274,7 +329,9 @@ export class ViewingsService {
       where: { id: viewingId },
       data: { status: ViewingStatus.CANCELLED },
       include: {
-        listing: { select: { id: true, title: true, coverImage: true, location: true } },
+        listing: {
+          select: { id: true, title: true, coverImage: true, location: true },
+        },
       },
     });
 

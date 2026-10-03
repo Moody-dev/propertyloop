@@ -39,7 +39,10 @@ export class OffersController {
 
   @UseGuards(JwtAuthGuard)
   @Get('me')
-  listMine(@CurrentUser() user: CurrentUserData, @Query() query: ListOffersDto) {
+  listMine(
+    @CurrentUser() user: CurrentUserData,
+    @Query() query: ListOffersDto,
+  ) {
     return this.offersService.listForBuyer(user.id, query);
   }
 

@@ -51,10 +51,7 @@ export class ViewingsController {
 
   @UseGuards(JwtAuthGuard)
   @Post('me/:id/cancel')
-  cancelMine(
-    @CurrentUser() user: CurrentUserData,
-    @Param('id') id: string,
-  ) {
+  cancelMine(@CurrentUser() user: CurrentUserData, @Param('id') id: string) {
     return this.viewingsService.cancelMine(user.id, id);
   }
 
@@ -63,10 +60,7 @@ export class ViewingsController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.AGENT)
   @Get()
-  list(
-    @CurrentUser() user: CurrentUserData,
-    @Query() query: ListViewingsDto,
-  ) {
+  list(@CurrentUser() user: CurrentUserData, @Query() query: ListViewingsDto) {
     return this.viewingsService.listForAgent(user.id, query);
   }
 
@@ -84,20 +78,14 @@ export class ViewingsController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.AGENT)
   @Post(':id/cancel')
-  cancel(
-    @CurrentUser() user: CurrentUserData,
-    @Param('id') id: string,
-  ) {
+  cancel(@CurrentUser() user: CurrentUserData, @Param('id') id: string) {
     return this.viewingsService.cancel(user.id, id);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.AGENT)
   @Delete(':id')
-  remove(
-    @CurrentUser() user: CurrentUserData,
-    @Param('id') id: string,
-  ) {
+  remove(@CurrentUser() user: CurrentUserData, @Param('id') id: string) {
     return this.viewingsService.remove(user.id, id);
   }
 }

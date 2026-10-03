@@ -4,9 +4,10 @@ import { MessagesController } from './messages.controller';
 import { ChatGateway } from './chat.gateway';
 import { PrismaModule } from '../prisma/prisma.module';
 import { AuthModule } from '../auth/auth.module';
+import { StockAlertsModule } from '../stock-alerts/stock-alerts.module';
 
 @Module({
-  imports: [PrismaModule, AuthModule],
+  imports: [PrismaModule, AuthModule, StockAlertsModule],
   controllers: [MessagesController],
   providers: [MessagesService, ChatGateway],
   exports: [MessagesService, ChatGateway],

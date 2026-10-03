@@ -565,6 +565,39 @@ export class StaffAlertsService {
       );
   }
 
+  /**
+   * Somebody interested in PropertyLoop's own stock — a viewing, an offer or
+   * a message from the website. Told to whoever sourced the property and to
+   * everyone who qualifies leads, because a buyer waiting on us is the one
+   * thing on this list that goes cold.
+   */
+  houseStockEnquiry(
+    listingId: string,
+    propertyTitle: string,
+    kind: 'VIEWING' | 'OFFER' | 'MESSAGE',
+    who: string,
+    ownerStaffId: string | null,
+  ) {
+    const what =
+      kind === 'VIEWING'
+        ? 'wants to view'
+        : kind === 'OFFER'
+          ? 'made an offer on'
+          : 'is asking about';
+    const alert = {
+      title: 'Enquiry on PropertyLoop stock',
+      body: `${who} ${what} ${propertyTitle}`,
+      url: '/leads',
+      // The same device replaces an earlier notice about the same property
+      // rather than stacking three.
+      tag: `house-enquiry-${listingId}`,
+    };
+    if (ownerStaffId) this.send({ staffIds: [ownerStaffId] }, alert);
+    this.send({ permission: StaffPermission.QUALIFY_LEAD }, alert, {
+      staffId: ownerStaffId,
+    });
+  }
+
   partnerRegistered(fullName: string, code: string) {
     this.send(
       { permission: StaffPermission.MANAGE_PARTNERS },
