@@ -83,7 +83,11 @@ describe('PartnerDirectoryService — recording a commission', () => {
   it('refuses a lead no partner introduced', async () => {
     const { service } = build({ ...goodLead, broughtByPartnerId: null });
     await expect(
-      service.recordCommission({ leadId: 'lead-1', saleValueNaira: 1_000_000 }),
+      service.recordCommission({
+        leadId: 'lead-1',
+        saleValueNaira: 1_000_000,
+        ratePercent: 3,
+      }),
     ).rejects.toThrow('not introduced by a partner');
   });
 
@@ -93,28 +97,44 @@ describe('PartnerDirectoryService — recording a commission', () => {
       listing: { ownership: 'AGENT_OWN' },
     });
     await expect(
-      service.recordCommission({ leadId: 'lead-1', saleValueNaira: 1_000_000 }),
+      service.recordCommission({
+        leadId: 'lead-1',
+        saleValueNaira: 1_000_000,
+        ratePercent: 3,
+      }),
     ).rejects.toThrow('house inventory only');
   });
 
   it('refuses a lead that has not closed', async () => {
     const { service } = build({ ...goodLead, status: 'NEGOTIATING' });
     await expect(
-      service.recordCommission({ leadId: 'lead-1', saleValueNaira: 1_000_000 }),
+      service.recordCommission({
+        leadId: 'lead-1',
+        saleValueNaira: 1_000_000,
+        ratePercent: 3,
+      }),
     ).rejects.toThrow('converted');
   });
 
   it('refuses a second commission on the same introduction', async () => {
     const { service } = build(goodLead, { id: 'already' });
     await expect(
-      service.recordCommission({ leadId: 'lead-1', saleValueNaira: 1_000_000 }),
+      service.recordCommission({
+        leadId: 'lead-1',
+        saleValueNaira: 1_000_000,
+        ratePercent: 3,
+      }),
     ).rejects.toThrow('already been recorded');
   });
 
   it.each([0, -1])('refuses a sale value of %s', async (v) => {
     const { service } = build(goodLead);
     await expect(
-      service.recordCommission({ leadId: 'lead-1', saleValueNaira: v }),
+      service.recordCommission({
+        leadId: 'lead-1',
+        saleValueNaira: v,
+        ratePercent: 3,
+      }),
     ).rejects.toThrow(BadRequestException);
   });
 
@@ -127,6 +147,16 @@ describe('PartnerDirectoryService — recording a commission', () => {
         ratePercent: rate,
       }),
     ).rejects.toThrow('between 0 and 100');
+  });
+
+  it('refuses a commission with no rate — there is no default', async () => {
+    const { service } = build(goodLead);
+    await expect(
+      service.recordCommission({
+        leadId: 'lead-1',
+        saleValueNaira: 1_000_000,
+      } as any),
+    ).rejects.toThrow('rate is required');
   });
 
   it('computes the amount from the sale value and rate', async () => {

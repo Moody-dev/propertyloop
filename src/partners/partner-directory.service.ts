@@ -12,11 +12,7 @@ import {
   PartnerStatus,
   Prisma,
 } from '../../generated/prisma/client';
-import {
-  DEFAULT_PARTNER_COMMISSION_PERCENT,
-  partnerPayoutGaps,
-  partnerPayoutReady,
-} from './partners.service';
+import { partnerPayoutGaps, partnerPayoutReady } from './partners.service';
 import { StaffAlertsService } from '../staff-alerts/staff-alerts.service';
 
 /** Operations' onboarding commitment for a new realtor, in hours. */
@@ -288,7 +284,8 @@ export class PartnerDirectoryService {
   async recordCommission(input: {
     leadId: string;
     saleValueNaira: number;
-    ratePercent?: number;
+    /** Agreed on the sale. There is no default to fall back on. */
+    ratePercent: number;
     note?: string;
   }) {
     const lead = await this.prisma.lead.findUnique({
@@ -328,7 +325,15 @@ export class PartnerDirectoryService {
       );
     }
 
-    const rate = input.ratePercent ?? DEFAULT_PARTNER_COMMISSION_PERCENT;
+    // Required, not defaulted: commission is agreed per property, so a
+    // fallback rate would pay whatever the code guessed rather than what was
+    // actually agreed on this sale.
+    const rate = input.ratePercent;
+    if (rate === undefined || rate === null) {
+      throw new BadRequestException(
+        'Commission rate is required — it is agreed per property, so there is no default',
+      );
+    }
     if (rate <= 0 || rate > 100) {
       throw new BadRequestException(
         'Commission rate must be between 0 and 100',

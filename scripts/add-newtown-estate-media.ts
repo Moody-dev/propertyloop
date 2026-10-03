@@ -67,16 +67,20 @@ async function main() {
   const heroPath = arg(args, 'hero');
   const flyerPath = arg(args, 'flyer');
   const videoPath = arg(args, 'video');
-  if (!heroPath || !videoPath) {
+  // --append adds artwork to the gallery and leaves the cover and video alone,
+  // for media that arrives after the listing is already up.
+  const appendPath = arg(args, 'append');
+  if (!heroPath && !appendPath) {
     throw new Error(
-      'Pass at least --hero=<image> (the new cover) and --video=<mp4>; --flyer=<image> is optional',
+      'Pass --hero=<image> (the new cover) or --append=<image> (added to the gallery)',
     );
   }
 
   const uploads: Upload[] = [
-    prepare('hero (cover)', heroPath, 'listings'),
+    ...(heroPath ? [prepare('hero (cover)', heroPath, 'listings')] : []),
     ...(flyerPath ? [prepare('flyer', flyerPath, 'listings')] : []),
-    prepare('video', videoPath, 'listings/video'),
+    ...(appendPath ? [prepare('append', appendPath, 'listings')] : []),
+    ...(videoPath ? [prepare('video', videoPath, 'listings/video')] : []),
   ];
 
   console.log('Newtown Estate — media\n');
@@ -131,9 +135,16 @@ async function main() {
       console.log(`✓ ${u.url}`);
     }
 
-    const cover = uploads[0].url;
-    const gallery = uploads.filter((u) => u.contentType.startsWith('image/')).map((u) => u.url);
-    const video = uploads.find((u) => u.contentType.startsWith('video/'))!.url;
+    // Only a --hero moves the cover, and only a --video replaces the video;
+    // an --append run must leave both exactly as they are.
+    const cover = uploads.find((u) => u.label === 'hero (cover)')?.url;
+    const appended = uploads
+      .filter((u) => u.label === 'append')
+      .map((u) => u.url);
+    const leading = uploads
+      .filter((u) => u.contentType.startsWith('image/') && u.label !== 'append')
+      .map((u) => u.url);
+    const video = uploads.find((u) => u.contentType.startsWith('video/'))?.url;
 
     for (const id of LISTING_IDS) {
       const existing = await prisma.listing.findUnique({
@@ -144,23 +155,28 @@ async function main() {
         console.warn(`! ${id} not found — skipped`);
         continue;
       }
-      // New artwork leads; whatever was already on the listing keeps its place
-      // behind it rather than being thrown away.
-      const images = [...gallery, ...existing.images.filter((i) => !gallery.includes(i))];
+      // New artwork leads, appended artwork goes last, and whatever was
+      // already on the listing keeps its place in between rather than being
+      // thrown away.
+      const kept = existing.images.filter(
+        (i) => !leading.includes(i) && !appended.includes(i),
+      );
+      const images = [...leading, ...kept, ...appended];
       await prisma.listing.update({
         where: { id },
         data: {
-          coverImage: cover,
           images,
-          videoUrl: video,
-          videoUrls: [video],
-          // The player needs a still; the cover is the one image guaranteed
-          // to exist and to match what the card already shows.
-          videoThumbnail: cover,
+          ...(cover && {
+            coverImage: cover,
+            // The player needs a still; the cover is the one image guaranteed
+            // to exist and to match what the card already shows.
+            videoThumbnail: cover,
+          }),
+          ...(video && { videoUrl: video, videoUrls: [video] }),
         },
       });
       console.log(`✓ ${existing.title}`);
-      console.log(`    ${images.length} photo(s) + video`);
+      console.log(`    ${images.length} photo(s)${video ? ' + video' : ''}`);
     }
     console.log('\nDone.');
   } finally {

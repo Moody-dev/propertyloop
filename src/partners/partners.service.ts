@@ -23,8 +23,11 @@ import { UpdatePartnerDto } from './dto/update-partner.dto';
 import { normalizePhone } from '../common/phone';
 import { StaffAlertsService } from '../staff-alerts/staff-alerts.service';
 
-/** Commission rate applied when a partner's introduction closes. */
-export const DEFAULT_PARTNER_COMMISSION_PERCENT = 2.5;
+/*
+ * There is no default commission rate. Commission is negotiated per property,
+ * so the rate is whatever was agreed on that sale — a fallback number here
+ * would quietly pay somebody the wrong amount.
+ */
 
 /** Every payout field that must be present before a transfer can be made. */
 export function partnerPayoutGaps(p: AgentPartner): string[] {
@@ -537,7 +540,6 @@ export class PartnersService {
       page,
       limit,
       pages: Math.ceil(total / limit),
-      commissionPercent: DEFAULT_PARTNER_COMMISSION_PERCENT,
     };
   }
 

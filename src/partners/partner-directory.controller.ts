@@ -111,7 +111,8 @@ export class PartnerDirectoryController {
     body: {
       leadId: string;
       saleValueNaira: number;
-      ratePercent?: number;
+      /** Agreed on the sale — there is no default rate. */
+      ratePercent: number;
       note?: string;
     },
   ) {
