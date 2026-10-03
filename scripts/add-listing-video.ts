@@ -25,6 +25,11 @@ const MIME: Record<string, string> = {
 };
 
 async function main() {
+  // One connection, on the direct port rather than through the pooler: a
+  // script must never compete with the running server for pooled slots.
+  process.env.DB_POOL_MAX = process.env.DB_POOL_MAX ?? '1';
+  if (process.env.DIRECT_URL) process.env.DATABASE_URL = process.env.DIRECT_URL;
+
   const [listingId, filePath] = process.argv.slice(2);
   if (!listingId || !filePath) {
     console.error(
