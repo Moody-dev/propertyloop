@@ -173,6 +173,7 @@ export class MarketplaceStoresService {
   private serializeFull(store: any) {
     return {
       id: store.id,
+      ownerUserId: store.ownerUserId,
       slug: store.slug,
       name: store.name,
       tagline: store.tagline,

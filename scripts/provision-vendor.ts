@@ -11,6 +11,7 @@
  *   DATABASE_URL / DIRECT_URL     Postgres connection
  *   PROVISION_EMAIL (optional)    Vendor email (default olaoluwaoyetibo01@gmail.com)
  *   PROVISION_PASSWORD (optional) Login password (default "Vendor2026!")
+ *   RESET_PASSWORD=1 (optional)   Also overwrite the password of an existing user
  */
 import 'dotenv/config';
 import * as bcrypt from 'bcrypt';
@@ -90,6 +91,7 @@ async function main() {
       data: {
         role: 'VENDOR',
         emailVerifiedAt: user.emailVerifiedAt ?? new Date(),
+        ...(process.env.RESET_PASSWORD === '1' ? { passwordHash } : {}),
       },
     });
     console.log(`vendor user ${EMAIL} already existed — ensured VENDOR role`);
