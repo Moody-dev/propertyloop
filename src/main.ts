@@ -38,7 +38,7 @@ async function bootstrap() {
     .map((o) => o.trim())
     .filter(Boolean);
 
-  const origins =
+  const allowList = new Set(
     process.env.NODE_ENV === 'production'
       ? [...prodOrigins, ...extraOrigins]
       : [
@@ -47,7 +47,28 @@ async function bootstrap() {
           'http://localhost:5175', // team portal
           ...prodOrigins,
           ...extraOrigins,
-        ];
+        ],
+  );
+
+  // Netlify builds a fresh URL for every deploy preview (deploy-preview-<n>--…)
+  // and branch deploy (<branch>--…) of the propertyloopmain site. Rather than
+  // chase each one into the allow-list, accept any preview subdomain for our
+  // own site — they are all our frontend, just unmerged.
+  const netlifyPreview =
+    /^https:\/\/[a-z0-9-]+--propertyloopmain\.netlify\.app$/;
+
+  const corsOrigin = (
+    requestOrigin: string | undefined,
+    callback: (err: Error | null, allow?: boolean) => void,
+  ) => {
+    // No Origin header: same-origin, curl, or server-to-server. Allow.
+    if (!requestOrigin) return callback(null, true);
+    if (allowList.has(requestOrigin) || netlifyPreview.test(requestOrigin)) {
+      return callback(null, true);
+    }
+    // Not allowed: no CORS headers added, the browser blocks it. Not an error.
+    return callback(null, false);
+  };
 
   // CORS must be configured at app creation so the preflight handler is
   // registered before helmet/compression/body-parser. Registering enableCors
@@ -55,7 +76,7 @@ async function bootstrap() {
   // intercepted (or stripped) before CORS could add Access-Control-Allow-Origin.
   const app = await NestFactory.create(AppModule, {
     rawBody: true,
-    cors: { origin: origins, credentials: true },
+    cors: { origin: corsOrigin, credentials: true },
   });
   // Behind Railway/Render's proxy: trust X-Forwarded-* so req.secure reflects
   // the original HTTPS scheme (used to set SameSite=None; Secure cookies) and

@@ -345,6 +345,8 @@ model User {
   bookmarks                  Bookmark[]
   vendorBookmarks            Bookmark[]                @relation("VendorBookmarks")
   orders                     Order[]
+  ownedStores                MarketplaceStore[]        @relation("OwnedStores")
+  marketplaceOrders          MarketplaceOrder[]        @relation("MarketplaceOrders")
   sentMessages               Message[]
   conversationsAsParticipant ConversationParticipant[]
   agentLeads                 Lead[]                    @relation("AgentLeads")
@@ -987,6 +989,174 @@ model OrderItem {
   quantity   Int
 
   @@index([orderId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Vendor Marketplace — branded storefronts, products, and multi-vendor orders.
+//
+// Distinct from the legacy `Product`/`Order` pair above (building-materials
+// marketplace, keyed to a free-text `supplier`). Here a store belongs to a real
+// VENDOR user, so sales attribute to an account we can pay. PropertyLoop takes a
+// commission per store; the rest is owed to the vendor and settled through the
+// same manual-withdrawal model the vendor-jobs flow already uses.
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum MarketplaceOrderStatus {
+  PENDING // created, redirected to Paystack, not yet confirmed
+  PAID // charge.success verified — vendor amounts owed are recorded
+  FULFILLED // every item dispatched/delivered
+  CANCELLED // abandoned at checkout or cancelled before payment
+  REFUNDED // money returned to the buyer
+}
+
+model MarketplaceStore {
+  id          String @id @default(cuid())
+  slug        String @unique
+  ownerUserId String
+  owner       User   @relation("OwnedStores", fields: [ownerUserId], references: [id], onDelete: Cascade)
+
+  name        String
+  tagline     String
+  bio         String
+  logo        String
+  banner      String
+  accent      String @default("#2b4e3b") // hex, drives the storefront's branding
+  category    String
+  location    String
+  phone       String
+  email       String
+  established String @default("")
+
+  // Platform commission taken from this store's sales, as a percent. Per-store
+  // so a high-volume vendor can be granted a better rate than the default.
+  commissionPct Int @default(7)
+
+  verified Boolean @default(false)
+  active   Boolean @default(true) // false hides the store without deleting it
+
+  // Denormalised display stats, recomputed as orders/reviews land.
+  rating          Float @default(0)
+  reviewsCount    Int   @default(0)
+  ordersFulfilled Int   @default(0)
+
+  responseTime  String   @default("within a day")
+  deliveryAreas String[]
+  // Flexible per-store JSON: policies [{icon,label,detail}], promo {title,subtitle,code},
+  // collections [{id,title,subtitle,image}]. Shaped to match the storefront UI.
+  policies      Json     @default("[]")
+  promo         Json?
+  collections   Json     @default("[]")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  products   MarketplaceProduct[]
+  orderItems MarketplaceOrderItem[]
+
+  @@index([ownerUserId])
+  @@index([category])
+  @@index([active])
+}
+
+model MarketplaceProduct {
+  id      String           @id @default(cuid())
+  storeId String
+  store   MarketplaceStore @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  slug           String   @unique
+  name           String
+  description    String
+  priceNaira     Int
+  compareAtNaira Int? // strike-through "was" price; null when not on sale
+  category       String
+  coverImage     String
+  gallery        String[]
+  specs          Json     @default("[]") // [{label,value}, ...]
+  options        Json     @default("[]") // [{label, values:[...]}, ...]
+  tag            String? // "new" | "bestseller" | "sale"
+  bulkEligible   Boolean  @default(false)
+
+  rating       Float   @default(0)
+  reviewsCount Int     @default(0)
+  inStock      Boolean @default(true)
+  stockQty     Int? // null = untracked / made-to-order; 0 = sold out
+  active       Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  orderItems MarketplaceOrderItem[]
+
+  @@index([storeId])
+  @@index([category])
+  @@index([active])
+}
+
+model MarketplaceOrder {
+  id          String @id @default(cuid())
+  orderNumber String @unique // human-facing, "PLM-..."
+
+  // Null for guest checkout — the order still stands on the snapshotted contact.
+  buyerUserId String?
+  buyer       User?   @relation("MarketplaceOrders", fields: [buyerUserId], references: [id], onDelete: SetNull)
+
+  buyerName  String
+  buyerEmail String
+  buyerPhone String
+
+  address String
+  city    String
+  state   String
+  notes   String?
+
+  // Naira ints, matching the frontend's money math.
+  subtotal    Int
+  deliveryFee Int
+  platformFee Int // buyer-facing service fee (distinct from vendor commission)
+  total       Int
+
+  status      MarketplaceOrderStatus @default(PENDING)
+  paystackRef String                 @unique
+  paidAt      DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  items MarketplaceOrderItem[]
+
+  @@index([buyerUserId])
+  @@index([status])
+}
+
+model MarketplaceOrderItem {
+  id      String           @id @default(cuid())
+  orderId String
+  order   MarketplaceOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  productId String
+  product   MarketplaceProduct @relation(fields: [productId], references: [id], onDelete: Restrict)
+  storeId   String
+  store     MarketplaceStore   @relation(fields: [storeId], references: [id], onDelete: Restrict)
+
+  // Snapshot of product + store at order time, so later edits don't rewrite history.
+  name         String
+  image        String
+  storeName    String
+  vendorUserId String // store owner at order time — who the payout is owed to
+  unitPrice    Int
+  quantity     Int
+  options      Json? // selected variant, e.g. { "Colour": "Olive" }
+
+  // Commission split, fixed at order creation (deterministic from price × qty × pct).
+  commissionPct   Int
+  commissionNaira Int
+  vendorNetNaira  Int
+
+  createdAt DateTime @default(now())
+
+  @@index([orderId])
+  @@index([storeId])
+  @@index([vendorUserId])
 }
 
 // Vendor work (matches src/data/vendor-dashboard.ts interfaces)

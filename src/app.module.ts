@@ -19,6 +19,7 @@ import { VendorEarningsModule } from './vendor-earnings/vendor-earnings.module';
 import { BookmarksModule } from './bookmarks/bookmarks.module';
 import { ProductsModule } from './products/products.module';
 import { OrdersModule } from './orders/orders.module';
+import { MarketplaceModule } from './marketplace/marketplace.module';
 import { ShortletBookingsModule } from './shortlet-bookings/shortlet-bookings.module';
 import { RentalApplicationsModule } from './rental-applications/rental-applications.module';
 import { MessagesModule } from './messages/messages.module';
@@ -109,6 +110,7 @@ import { StaffAlertsModule } from './staff-alerts/staff-alerts.module';
     BookmarksModule,
     ProductsModule,
     OrdersModule,
+    MarketplaceModule,
     ShortletBookingsModule,
     RentalApplicationsModule,
     MessagesModule,

@@ -36,6 +36,9 @@ export const NotificationType = {
   WITHDRAWAL_PAID: 'WITHDRAWAL_PAID', // → vendor. data: { withdrawalId }
   WITHDRAWAL_REJECTED: 'WITHDRAWAL_REJECTED', // → vendor. data: { withdrawalId }
 
+  // Marketplace (branded storefronts)
+  MARKETPLACE_ORDER_PAID: 'MARKETPLACE_ORDER_PAID', // → vendor. data: { orderId, orderNumber } — buyer paid, prepare items
+
   // Misc
   MESSAGE: 'MESSAGE',
   GENERAL: 'GENERAL',

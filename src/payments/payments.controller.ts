@@ -140,6 +140,10 @@ export class PaymentsController {
         await this.paymentsService.handleSubscriptionChargeSuccess(event.data);
       } else if (meta?.type === 'brand_ad') {
         await this.paymentsService.handleAdChargeSuccess(event.data.reference);
+      } else if (meta?.type === 'marketplace_order') {
+        await this.paymentsService.handleMarketplaceChargeSuccess(
+          event.data.reference,
+        );
       } else {
         await this.paymentsService.handleChargeSuccess(event.data.reference);
       }

@@ -284,6 +284,89 @@ export class PaymentsService {
     }
   }
 
+  /**
+   * charge.success for a marketplace order (metadata.type === 'marketplace_order').
+   * Lives here, like the ad handler, so the webhook never needs to import
+   * MarketplaceModule (which imports PaymentsModule — the reverse would cycle).
+   *
+   * Idempotent: only a PENDING order is promoted, and the amount is re-verified
+   * against Paystack before anything is marked paid. Vendor payout figures are
+   * already stored per item at order creation, so confirming payment is just a
+   * status flip plus a notification to each vendor whose goods were bought.
+   */
+  async handleMarketplaceChargeSuccess(reference: string): Promise<void> {
+    const order = await this.prisma.marketplaceOrder.findUnique({
+      where: { paystackRef: reference },
+      include: { items: true },
+    });
+    if (!order) {
+      console.warn(`Webhook: marketplace order not found for ${reference}`);
+      return;
+    }
+    if (order.status !== 'PENDING') return; // already processed
+
+    try {
+      const txn = await this.paystackService.verifyTransaction(reference);
+      if (txn.status !== 'success') {
+        console.warn(
+          `Marketplace payment not successful (${txn.status}) for ${reference}`,
+        );
+        return;
+      }
+      if (txn.amount !== order.total * 100) {
+        console.warn(
+          `Marketplace amount mismatch for ${reference}: expected ${order.total * 100}, got ${txn.amount}`,
+        );
+        return;
+      }
+
+      await this.prisma.marketplaceOrder.update({
+        where: { id: order.id },
+        data: { status: 'PAID', paidAt: new Date() },
+      });
+
+      // One notification per vendor with items in this order, each naming only
+      // their own lines and their own net payout.
+      const byVendor = new Map<
+        string,
+        { count: number; net: number; storeName: string }
+      >();
+      for (const item of order.items) {
+        const agg = byVendor.get(item.vendorUserId) ?? {
+          count: 0,
+          net: 0,
+          storeName: item.storeName,
+        };
+        agg.count += item.quantity;
+        agg.net += item.vendorNetNaira;
+        byVendor.set(item.vendorUserId, agg);
+      }
+
+      for (const [vendorUserId, agg] of byVendor) {
+        void this.notifications.notify({
+          userId: vendorUserId,
+          type: NotificationType.MARKETPLACE_ORDER_PAID,
+          title: 'New order — payment received',
+          body: `${order.buyerName} ordered ${agg.count} item${
+            agg.count === 1 ? '' : 's'
+          } from ${agg.storeName}. Your share: ₦${agg.net.toLocaleString(
+            'en-NG',
+          )}. Prepare it for delivery.`,
+          data: { orderId: order.id, orderNumber: order.orderNumber },
+        });
+      }
+
+      console.log(
+        `Marketplace order ${order.orderNumber} PAID via ${reference}`,
+      );
+    } catch (error: any) {
+      console.error(
+        `Error handling marketplace charge.success for ${reference}:`,
+        error.message,
+      );
+    }
+  }
+
   async releaseEscrow(jobId: string, buyerUserId: string): Promise<void> {
     const job = await this.prisma.vendorJob.findUnique({
       where: { id: jobId },
