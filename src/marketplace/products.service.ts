@@ -97,6 +97,7 @@ export class MarketplaceProductsService {
     return {
       ...serializeProduct(product),
       store: {
+        ownerUserId: product.store.ownerUserId,
         slug: product.store.slug,
         name: product.store.name,
         logo: product.store.logo,
