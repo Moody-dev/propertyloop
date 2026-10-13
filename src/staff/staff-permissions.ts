@@ -105,4 +105,6 @@ export const SENSITIVE_PERMISSIONS: StaffPermission[] = [
   StaffPermission.REVIEW_KYC,
   StaffPermission.RESOLVE_DISPUTE,
   StaffPermission.MANAGE_STAFF,
+  // Marketplace admin can issue refunds — real money leaves the business.
+  StaffPermission.MANAGE_MARKETPLACE,
 ];

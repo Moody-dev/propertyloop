@@ -347,6 +347,7 @@ model User {
   orders                     Order[]
   ownedStores                MarketplaceStore[]        @relation("OwnedStores")
   marketplaceOrders          MarketplaceOrder[]        @relation("MarketplaceOrders")
+  marketplaceDisputesRaised  MarketplaceDispute[]      @relation("MarketplaceDisputesRaised")
   sentMessages               Message[]
   conversationsAsParticipant ConversationParticipant[]
   agentLeads                 Lead[]                    @relation("AgentLeads")
@@ -542,6 +543,12 @@ model VendorBankAccount {
   // aren't enabled on our account), so a recipient code is nice-to-have for a
   // future automated flow, not a requirement to save a bank account.
   paystackRecipientCode String?
+
+  // Paystack subaccount for the marketplace split-payment flow. When present,
+  // a marketplace order routes this vendor's net share straight to their bank
+  // at checkout (no escrow, no manual payout). Created best-effort when the
+  // bank account is saved; absent until Paystack accepts it.
+  paystackSubaccountCode String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1006,7 +1013,22 @@ enum MarketplaceOrderStatus {
   PAID // charge.success verified — vendor amounts owed are recorded
   FULFILLED // every item dispatched/delivered
   CANCELLED // abandoned at checkout or cancelled before payment
-  REFUNDED // money returned to the buyer
+  DISPUTED // buyer opened a dispute; awaiting admin resolution
+  REFUNDED // money returned to the buyer (full or partial)
+}
+
+/// How a single order line's money reached the vendor.
+enum MarketplacePayoutStatus {
+  PAID_OUT // split straight to the vendor's Paystack subaccount at checkout
+  OWED // vendor had no subaccount — recorded as an owed earning, settled by admin
+  REFUNDED // the line was refunded to the buyer; nothing is owed to the vendor
+}
+
+enum MarketplaceDisputeStatus {
+  OPEN // raised by the buyer, awaiting an admin
+  RESOLVED_REFUND // admin refunded (full or partial)
+  RESOLVED_REJECTED // admin rejected — no refund
+  CANCELLED // buyer withdrew the dispute
 }
 
 model MarketplaceStore {
@@ -1027,9 +1049,12 @@ model MarketplaceStore {
   email       String
   established String @default("")
 
-  // Platform commission taken from this store's sales, as a percent. Per-store
-  // so a high-volume vendor can be granted a better rate than the default.
-  commissionPct Int @default(7)
+  // Platform commission taken from this store's sales, as a percent. Kept for
+  // back-compat; the live rate now resolves per product category (see
+  // marketplace.constants.ts). commissionPctOverride, when set, wins over the
+  // category rate — a negotiated rate for a high-volume vendor.
+  commissionPct         Int  @default(7)
+  commissionPctOverride Int?
 
   verified Boolean @default(false)
   active   Boolean @default(true) // false hides the store without deleting it
@@ -1119,10 +1144,16 @@ model MarketplaceOrder {
   paystackRef String                 @unique
   paidAt      DateTime?
 
+  // Refund bookkeeping. refundedNaira accumulates across partial refunds so a
+  // second refund can never exceed what is left.
+  refundedNaira Int       @default(0)
+  refundedAt    DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  items MarketplaceOrderItem[]
+  items    MarketplaceOrderItem[]
+  disputes MarketplaceDispute[]
 
   @@index([buyerUserId])
   @@index([status])
@@ -1142,6 +1173,7 @@ model MarketplaceOrderItem {
   name         String
   image        String
   storeName    String
+  category     String  @default("") // product category at order time — drives the commission rate
   vendorUserId String // store owner at order time — who the payout is owed to
   unitPrice    Int
   quantity     Int
@@ -1152,11 +1184,46 @@ model MarketplaceOrderItem {
   commissionNaira Int
   vendorNetNaira  Int
 
+  // How this line's net reached the vendor. Set when the order is paid: PAID_OUT
+  // when it was split to their subaccount, OWED when it fell back to the manual
+  // queue. Flipped to REFUNDED if the line is later refunded.
+  payoutStatus         MarketplacePayoutStatus @default(OWED)
+  paystackSubaccount   String? // the subaccount the split targeted, if any
+
   createdAt DateTime @default(now())
 
   @@index([orderId])
   @@index([storeId])
   @@index([vendorUserId])
+}
+
+/// A buyer-raised dispute on a paid marketplace order. An admin with
+/// MANAGE_MARKETPLACE resolves it, optionally issuing a full or partial refund.
+model MarketplaceDispute {
+  id      String           @id @default(cuid())
+  orderId String
+  order   MarketplaceOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  // The buyer who raised it. Null for a guest order (identified by the order).
+  raisedByUserId String?
+  raisedBy       User?   @relation("MarketplaceDisputesRaised", fields: [raisedByUserId], references: [id], onDelete: SetNull)
+
+  reason  String // short category, e.g. "Item not delivered"
+  details String // the buyer's description
+
+  status MarketplaceDisputeStatus @default(OPEN)
+
+  // Set on resolution.
+  resolvedByStaffId String?
+  resolutionNote    String?
+  refundNaira       Int       @default(0)
+  resolvedAt        DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([orderId])
+  @@index([status])
 }
 
 // Vendor work (matches src/data/vendor-dashboard.ts interfaces)
@@ -2136,6 +2203,9 @@ enum StaffPermission {
   /// Sign off a partner commission for payment. Separate from recording the
   /// sale on purpose: the person who logs it should not release it.
   APPROVE_COMMISSION
+  /// Run the product marketplace — verify stores, set commission, oversee
+  /// orders, and resolve refunds and disputes (money movement).
+  MANAGE_MARKETPLACE
 }
 
 /// A member of staff.

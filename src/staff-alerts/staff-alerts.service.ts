@@ -514,6 +514,19 @@ export class StaffAlertsService {
     );
   }
 
+  /** A buyer disputed a marketplace order — the marketplace admin resolves it. */
+  marketplaceDisputeOpened(orderNumber: string, reason: string) {
+    this.send(
+      { permission: StaffPermission.MANAGE_MARKETPLACE },
+      {
+        title: 'Marketplace dispute opened',
+        body: `Order ${orderNumber} — ${reason}`,
+        url: '/marketplace',
+        tag: 'marketplace-dispute',
+      },
+    );
+  }
+
   /** An enquiry from the website or app. Only PropertyLoop's own stock is ours. */
   houseEnquiry(listingId: string, name: string) {
     void this.prisma.listing

@@ -9,9 +9,55 @@
 // the vendor's payout.
 export const BUYER_PLATFORM_FEE_PCT = 1.5;
 
-// Default commission PropertyLoop takes from a store's sales. Stores can be
-// given a better rate via MarketplaceStore.commissionPct.
+// Commission PropertyLoop takes from a store's sales, by product category.
+// These are the starting rates in the marketplace architecture: the rate is
+// resolved per line from the product's category, so one cart can carry several
+// rates. A store can be given a negotiated rate that overrides all of these
+// (MarketplaceStore.commissionPctOverride).
 export const DEFAULT_COMMISSION_PCT = 7;
+
+export const CATEGORY_COMMISSION_PCT: Record<string, number> = {
+  // Building & construction materials
+  'building materials': 5,
+  // Home & interior / décor
+  'home & interior': 7,
+  'home & decor': 7,
+  'home & décor': 7,
+  'lighting & decor': 7,
+  lighting: 7,
+  decor: 7,
+  'home & living': 7,
+  // Furniture
+  furniture: 7,
+  // Electronics / appliances
+  electronics: 5,
+  appliances: 5,
+  'electronics & appliances': 5,
+  'smart home': 5,
+  // Professional & construction services
+  'professional services': 10,
+  'construction services': 10,
+  'property services': 10,
+  services: 10,
+};
+
+/**
+ * The commission rate that applies to a single line.
+ *
+ * A negotiated per-store override wins over everything. Otherwise the rate is
+ * looked up from the product category (case-insensitive, trimmed); anything
+ * unrecognised falls back to the default. Returned as a whole-number percent.
+ */
+export function resolveCommissionPct(
+  category: string | null | undefined,
+  storeOverridePct?: number | null,
+): number {
+  if (storeOverridePct !== null && storeOverridePct !== undefined) {
+    return storeOverridePct;
+  }
+  const key = (category ?? '').trim().toLowerCase();
+  return CATEGORY_COMMISSION_PCT[key] ?? DEFAULT_COMMISSION_PCT;
+}
 
 // Free delivery once the subtotal clears this; otherwise a flat fee applies.
 export const FREE_DELIVERY_THRESHOLD = 250_000;

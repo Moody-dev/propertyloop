@@ -14,6 +14,7 @@ import {
   commissionFor,
   deliveryFeeFor,
   platformFeeFor,
+  resolveCommissionPct,
 } from './marketplace.constants';
 import type { CurrentUserData } from '../auth/decorators/current-user.decorator';
 
@@ -68,18 +69,41 @@ export class MarketplaceOrdersService {
       throw new BadRequestException(`"${soldOut.name}" is out of stock.`);
     }
 
-    // Build order items with per-line commission snapshots.
+    // Each vendor's Paystack subaccount, if they have set one up. When present,
+    // their share is split to them at checkout (immediate payout); when absent,
+    // the share stays with PropertyLoop and is recorded as owed for manual
+    // settlement. Looked up once, keyed by the store owner.
+    const vendorIds = [...new Set(products.map((p) => p.store.ownerUserId))];
+    const bankAccounts = await this.prisma.vendorBankAccount.findMany({
+      where: { vendorUserId: { in: vendorIds } },
+      select: { vendorUserId: true, paystackSubaccountCode: true },
+    });
+    const subaccountByVendor = new Map<string, string>();
+    for (const b of bankAccounts) {
+      if (b.paystackSubaccountCode) {
+        subaccountByVendor.set(b.vendorUserId, b.paystackSubaccountCode);
+      }
+    }
+
+    // Build order items with per-line commission snapshots. The commission rate
+    // is resolved from the product's category (a negotiated per-store override
+    // wins), so one cart can carry several rates.
     const itemsData = products.map((p) => {
       const quantity = quantities.get(p.id)!;
       const lineTotal = p.priceNaira * quantity;
-      const commissionPct = p.store.commissionPct;
+      const commissionPct = resolveCommissionPct(
+        p.category,
+        p.store.commissionPctOverride,
+      );
       const commissionNaira = commissionFor(lineTotal, commissionPct);
+      const subaccount = subaccountByVendor.get(p.store.ownerUserId) ?? null;
       return {
         productId: p.id,
         storeId: p.storeId,
         name: p.name,
         image: p.coverImage,
         storeName: p.store.name,
+        category: p.category,
         vendorUserId: p.store.ownerUserId,
         unitPrice: p.priceNaira,
         quantity,
@@ -87,6 +111,9 @@ export class MarketplaceOrdersService {
         commissionPct,
         commissionNaira,
         vendorNetNaira: lineTotal - commissionNaira,
+        // Which subaccount this line's share will settle to, if any. payoutStatus
+        // is resolved from this when the order is confirmed paid.
+        paystackSubaccount: subaccount,
       };
     });
 
@@ -97,6 +124,31 @@ export class MarketplaceOrdersService {
     const deliveryFee = deliveryFeeFor(subtotal);
     const platformFee = platformFeeFor(subtotal);
     const total = subtotal + deliveryFee + platformFee;
+
+    // Dynamic split: aggregate each subaccount's net share (kobo). Vendors
+    // without a subaccount are simply absent from the split, so their share
+    // stays in PropertyLoop's account and is settled manually. PropertyLoop
+    // (the main account) always keeps commission + delivery + platform fee and
+    // bears the Paystack transaction fee.
+    const shareBySubaccount = new Map<string, number>();
+    for (const it of itemsData) {
+      if (!it.paystackSubaccount) continue;
+      shareBySubaccount.set(
+        it.paystackSubaccount,
+        (shareBySubaccount.get(it.paystackSubaccount) ?? 0) + it.vendorNetNaira,
+      );
+    }
+    const split =
+      shareBySubaccount.size > 0
+        ? {
+            type: 'flat' as const,
+            currency: 'NGN' as const,
+            bearer_type: 'account' as const,
+            subaccounts: [...shareBySubaccount.entries()].map(
+              ([subaccount, naira]) => ({ subaccount, share: naira * 100 }),
+            ),
+          }
+        : undefined;
 
     const orderNumber = this.makeOrderNumber();
     // Reference and order number share a value: it is unique, traceable in the
@@ -143,6 +195,7 @@ export class MarketplaceOrdersService {
           orderId: order.id,
           orderNumber,
         },
+        ...(split && { split }),
       });
 
       return {

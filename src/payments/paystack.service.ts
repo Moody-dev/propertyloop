@@ -47,6 +47,16 @@ export class PaystackService {
     reference: string;
     callback_url: string;
     metadata: Record<string, any>;
+    // Marketplace split payment. A dynamic `split` routes each vendor's share
+    // to their subaccount at settlement; PropertyLoop keeps the remainder
+    // (commission + fees). Passed only when every vendor in the cart has a
+    // subaccount — see MarketplaceOrdersService.
+    split?: {
+      type: 'flat';
+      currency: 'NGN';
+      bearer_type?: 'account' | 'subaccount' | 'all-proportional' | 'all';
+      subaccounts: { subaccount: string; share: number }[]; // share in kobo
+    };
   }): Promise<{
     authorization_url: string;
     access_code: string;
@@ -57,6 +67,30 @@ export class PaystackService {
       payload,
     );
     return response.data.data;
+  }
+
+  /**
+   * Create a Paystack subaccount for a vendor. The subaccount is the account
+   * money is split into at checkout, so the vendor is settled directly by
+   * Paystack — PropertyLoop never holds their share.
+   *
+   * `percentage_charge` is Paystack-required but irrelevant to us: we always
+   * override the split per-transaction with flat amounts, so this is set to 0
+   * and never actually governs a settlement.
+   */
+  async createSubaccount(payload: {
+    business_name: string;
+    bank_code: string;
+    account_number: string;
+    percentage_charge?: number;
+  }): Promise<{ subaccount_code: string }> {
+    const response = await this.axiosInstance.post('/subaccount', {
+      business_name: payload.business_name,
+      bank_code: payload.bank_code,
+      account_number: payload.account_number,
+      percentage_charge: payload.percentage_charge ?? 0,
+    });
+    return { subaccount_code: response.data.data.subaccount_code };
   }
 
   async verifyTransaction(reference: string): Promise<{

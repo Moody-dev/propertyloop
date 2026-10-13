@@ -38,6 +38,9 @@ export const NotificationType = {
 
   // Marketplace (branded storefronts)
   MARKETPLACE_ORDER_PAID: 'MARKETPLACE_ORDER_PAID', // → vendor. data: { orderId, orderNumber } — buyer paid, prepare items
+  MARKETPLACE_DISPUTE_OPENED: 'MARKETPLACE_DISPUTE_OPENED', // → vendor. data: { orderId, orderNumber, disputeId } — buyer raised a dispute
+  MARKETPLACE_DISPUTE_RESOLVED: 'MARKETPLACE_DISPUTE_RESOLVED', // → buyer. data: { orderId, orderNumber, disputeId } — admin decided
+  MARKETPLACE_ORDER_REFUNDED: 'MARKETPLACE_ORDER_REFUNDED', // → buyer. data: { orderId, orderNumber } — money returned
 
   // Misc
   MESSAGE: 'MESSAGE',

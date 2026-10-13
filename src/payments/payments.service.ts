@@ -320,38 +320,58 @@ export class PaymentsService {
         return;
       }
 
-      await this.prisma.marketplaceOrder.update({
-        where: { id: order.id },
-        data: { status: 'PAID', paidAt: new Date() },
-      });
+      // Mark paid, and record how each line's money reached the vendor: a line
+      // with a subaccount was split straight to them at this charge (PAID_OUT);
+      // one without is owed and settled manually (OWED). The split itself was
+      // set on the transaction at order creation — this only records the
+      // outcome for the books and the admin view.
+      await this.prisma.$transaction([
+        this.prisma.marketplaceOrder.update({
+          where: { id: order.id },
+          data: { status: 'PAID', paidAt: new Date() },
+        }),
+        this.prisma.marketplaceOrderItem.updateMany({
+          where: { orderId: order.id, paystackSubaccount: { not: null } },
+          data: { payoutStatus: 'PAID_OUT' },
+        }),
+        this.prisma.marketplaceOrderItem.updateMany({
+          where: { orderId: order.id, paystackSubaccount: null },
+          data: { payoutStatus: 'OWED' },
+        }),
+      ]);
 
       // One notification per vendor with items in this order, each naming only
-      // their own lines and their own net payout.
+      // their own lines and their own net payout. Vendors whose share was split
+      // to their bank are told it has been settled; the rest that a payout is
+      // on the way.
       const byVendor = new Map<
         string,
-        { count: number; net: number; storeName: string }
+        { count: number; net: number; storeName: string; paidOut: boolean }
       >();
       for (const item of order.items) {
         const agg = byVendor.get(item.vendorUserId) ?? {
           count: 0,
           net: 0,
           storeName: item.storeName,
+          paidOut: !!item.paystackSubaccount,
         };
         agg.count += item.quantity;
         agg.net += item.vendorNetNaira;
+        agg.paidOut = agg.paidOut && !!item.paystackSubaccount;
         byVendor.set(item.vendorUserId, agg);
       }
 
       for (const [vendorUserId, agg] of byVendor) {
+        const settled = agg.paidOut
+          ? `Your share of ₦${agg.net.toLocaleString('en-NG')} has been paid to your bank.`
+          : `Your share: ₦${agg.net.toLocaleString('en-NG')} — payout on the way. Add your payout bank in Settings to be paid automatically next time.`;
         void this.notifications.notify({
           userId: vendorUserId,
           type: NotificationType.MARKETPLACE_ORDER_PAID,
           title: 'New order — payment received',
           body: `${order.buyerName} ordered ${agg.count} item${
             agg.count === 1 ? '' : 's'
-          } from ${agg.storeName}. Your share: ₦${agg.net.toLocaleString(
-            'en-NG',
-          )}. Prepare it for delivery.`,
+          } from ${agg.storeName}. ${settled} Prepare it for delivery.`,
           data: { orderId: order.id, orderNumber: order.orderNumber },
         });
       }
@@ -927,6 +947,26 @@ export class PaymentsService {
       );
     }
 
+    // Subaccount for the marketplace split flow: when present, a marketplace
+    // order settles this vendor's share straight to their bank at checkout.
+    // Best-effort — a failure here never blocks saving the account; the order
+    // flow falls back to recording the share as owed and settling it manually.
+    let subaccountCode: string | null = null;
+    try {
+      const { subaccount_code } = await this.paystackService.createSubaccount({
+        business_name: dto.accountName,
+        bank_code: dto.bankCode,
+        account_number: dto.accountNumber,
+        percentage_charge: 0,
+      });
+      subaccountCode = subaccount_code;
+    } catch (error: any) {
+      console.warn(
+        `Paystack subaccount creation failed for vendor ${vendorUserId} (continuing — marketplace payout falls back to manual):`,
+        error.response?.data?.message || error.message,
+      );
+    }
+
     try {
       const bankAccount = await this.prisma.vendorBankAccount.upsert({
         where: { vendorUserId },
@@ -937,6 +977,7 @@ export class PaymentsService {
           bankCode: dto.bankCode,
           bankName: dto.bankName,
           paystackRecipientCode: recipientCode,
+          paystackSubaccountCode: subaccountCode,
         },
         update: {
           accountName: dto.accountName,
@@ -944,6 +985,7 @@ export class PaymentsService {
           bankCode: dto.bankCode,
           bankName: dto.bankName,
           ...(recipientCode && { paystackRecipientCode: recipientCode }),
+          ...(subaccountCode && { paystackSubaccountCode: subaccountCode }),
         },
       });
 
